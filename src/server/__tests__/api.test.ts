@@ -88,4 +88,138 @@ describe('Document API routes', () => {
     const sidecar = JSON.parse(sidecarRaw);
     expect(sidecar.documents.index.title).toBe('Hamiltonian Mechanics');
   });
+
+  it('PUT /api/blocks/:id updates block markdown on disk and refreshes ToC', async () => {
+    const seedGenerator = vi.fn().mockResolvedValue({
+      title: 'Hamiltonian Mechanics',
+      blocks: [
+        '## 1. Phase Space Coordinates\n\nGeneralized coordinates $q$ and momenta $p$ span phase space.',
+        '## 2. The Hamiltonian Function\n\nThe total energy $H(q, p)$ governs system evolution.',
+        '## 3. Canonical Equations\n\nEquations of motion.',
+        '## 4. Liouville Theorem\n\nPhase space volume is conserved.',
+      ],
+    });
+
+    const app = createApp({
+      workspaceDir: tempDir,
+      seedGenerator,
+      modelId: 'anthropic:claude-opus-4-6',
+    });
+
+    await app.request('/api/doc/seed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: 'Hamiltonian Mechanics' }),
+    });
+
+    const updateRes = await app.request('/api/blocks/blk_01', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        markdown:
+          '## 1. Symplectic Phase Space\n\nCanonical coordinates $(q, p)$ form a symplectic manifold.',
+      }),
+    });
+
+    expect(updateRes.status).toBe(200);
+    const body = await updateRes.json();
+    expect(body.blocks).toHaveLength(4);
+    expect(body.blocks[0]).toEqual({
+      id: 'blk_01',
+      markdown:
+        '## 1. Symplectic Phase Space\n\nCanonical coordinates $(q, p)$ form a symplectic manifold.',
+    });
+    expect(body.toc).toEqual([
+      { level: 2, text: '1. Symplectic Phase Space', blockId: 'blk_01' },
+      { level: 2, text: '2. The Hamiltonian Function', blockId: 'blk_02' },
+      { level: 2, text: '3. Canonical Equations', blockId: 'blk_03' },
+      { level: 2, text: '4. Liouville Theorem', blockId: 'blk_04' },
+    ]);
+
+    const indexMd = await fs.readFile(path.join(tempDir, 'index.md'), 'utf-8');
+    expect(indexMd).toContain('## 1. Symplectic Phase Space');
+    expect(indexMd).not.toContain('## 1. Phase Space Coordinates');
+  });
+
+  it('POST /api/blocks/:id/split, POST /api/blocks/:id/merge, and DELETE /api/blocks/:id mutate blocks in index.md', async () => {
+    const seedGenerator = vi.fn().mockResolvedValue({
+      title: 'Hamiltonian Mechanics',
+      blocks: [
+        '## 1. Phase Space Coordinates\n\nFirst paragraph on coordinates.\n\nSecond paragraph on canonical momenta.',
+        '## 2. The Hamiltonian Function\n\nEnergy formulation.',
+        '## 3. Canonical Equations\n\nEquations of motion.',
+        '## 4. Liouville Theorem\n\nPhase space volume is conserved.',
+      ],
+    });
+
+    const app = createApp({
+      workspaceDir: tempDir,
+      seedGenerator,
+      modelId: 'anthropic:claude-opus-4-6',
+    });
+
+    await app.request('/api/doc/seed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: 'Hamiltonian Mechanics' }),
+    });
+
+    // 1. Split blk_01 into two adjacent blocks
+    const splitRes = await app.request('/api/blocks/blk_01/split', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(splitRes.status).toBe(200);
+    const splitBody = await splitRes.json();
+    expect(splitBody.blocks).toHaveLength(5);
+    expect(splitBody.blocks[0].id).toBe('blk_01');
+    expect(splitBody.blocks[0].markdown).toContain('## 1. Phase Space Coordinates');
+    expect(splitBody.blocks[0].markdown).toContain('First paragraph on coordinates.');
+    expect(splitBody.blocks[1].id).toMatch(/^blk_/);
+    expect(splitBody.blocks[1].id).not.toBe('blk_01');
+    expect(splitBody.blocks[1].markdown).toBe('Second paragraph on canonical momenta.');
+
+    const secondBlockId = splitBody.blocks[1].id as string;
+    let indexMd = await fs.readFile(path.join(tempDir, 'index.md'), 'utf-8');
+    expect(indexMd).toContain(`<!-- folio:block id="${secondBlockId}" -->`);
+
+    // 2. Merge blk_01 with the newly split secondBlockId
+    const mergeRes = await app.request('/api/blocks/blk_01/merge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(mergeRes.status).toBe(200);
+    const mergeBody = await mergeRes.json();
+    expect(mergeBody.blocks).toHaveLength(4);
+    expect(mergeBody.blocks[0].id).toBe('blk_01');
+    expect(mergeBody.blocks[0].markdown).toContain('First paragraph on coordinates.');
+    expect(mergeBody.blocks[0].markdown).toContain('Second paragraph on canonical momenta.');
+
+    indexMd = await fs.readFile(path.join(tempDir, 'index.md'), 'utf-8');
+    expect(indexMd).not.toContain(`<!-- folio:block id="${secondBlockId}" -->`);
+
+    // 3. Delete blk_02
+    const deleteRes = await app.request('/api/blocks/blk_02', {
+      method: 'DELETE',
+    });
+    expect(deleteRes.status).toBe(200);
+    const deleteBody = await deleteRes.json();
+    expect(deleteBody.blocks).toHaveLength(3);
+    expect(deleteBody.blocks.map((b: { id: string }) => b.id)).toEqual([
+      'blk_01',
+      'blk_03',
+      'blk_04',
+    ]);
+    expect(deleteBody.toc).toEqual([
+      { level: 2, text: '1. Phase Space Coordinates', blockId: 'blk_01' },
+      { level: 2, text: '3. Canonical Equations', blockId: 'blk_03' },
+      { level: 2, text: '4. Liouville Theorem', blockId: 'blk_04' },
+    ]);
+
+    indexMd = await fs.readFile(path.join(tempDir, 'index.md'), 'utf-8');
+    expect(indexMd).not.toContain('<!-- folio:block id="blk_02" -->');
+  });
 });
+
