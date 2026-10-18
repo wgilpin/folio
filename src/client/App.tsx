@@ -3,9 +3,11 @@ import type {
   ConceptBlock,
   DocumentNode,
   EphemeralChatThread,
+  LearnerProfile,
   NotebookSettings,
   PendingSuggestedEdit,
   TocItem,
+  TopicFamiliarity,
 } from '../shared/schema.js';
 import { ConceptBlockCard } from './components/ConceptBlockCard.js';
 import { GateBanner } from './components/GateBanner.js';
@@ -23,6 +25,7 @@ interface DocApiResponse {
   settings?: NotebookSettings;
   workspaceDir?: string;
   workspaces?: string[];
+  profile?: LearnerProfile;
 }
 
 export function App(): React.ReactElement {
@@ -46,6 +49,10 @@ export function App(): React.ReactElement {
   });
   const [workspaceDir, setWorkspaceDir] = useState<string>('');
   const [workspaces, setWorkspaces] = useState<string[]>([]);
+  const [profile, setProfile] = useState<LearnerProfile>({ topics: {} });
+  const [seedingPrerequisiteTopic, setSeedingPrerequisiteTopic] = useState<
+    string | null
+  >(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSeeding, setIsSeeding] = useState<boolean>(false);
   const [seedError, setSeedError] = useState<string | null>(null);
@@ -83,6 +90,9 @@ export function App(): React.ReactElement {
     }
     if (payload.workspaces !== undefined) {
       setWorkspaces(payload.workspaces);
+    }
+    if (payload.profile !== undefined) {
+      setProfile(payload.profile);
     }
   };
 
@@ -180,6 +190,59 @@ export function App(): React.ReactElement {
       setChatError(null);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleTogglePrerequisiteKnown = async (
+    topic: string,
+    nextStatus: TopicFamiliarity
+  ) => {
+    setProfile((prev) => ({
+      topics: {
+        ...prev.topics,
+        [topic]: nextStatus,
+      },
+    }));
+
+    try {
+      const res = await fetch('/api/profile/topics', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic, status: nextStatus }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { profile?: LearnerProfile };
+        if (data.profile) {
+          setProfile(data.profile);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSeedPrerequisite = async (topic: string) => {
+    setSeedingPrerequisiteTopic(topic);
+    try {
+      const res = await fetch('/api/prerequisites/seed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic,
+          parentDocId: document?.id ?? 'index',
+        }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as DocApiResponse;
+        applyDocResponse(data);
+        setActiveChat(null);
+        setActiveChatBlockId(null);
+        setChatError(null);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSeedingPrerequisiteTopic(null);
     }
   };
 
@@ -596,9 +659,18 @@ export function App(): React.ReactElement {
                       askCellDisabled={pendingEdits.length > 0}
                       pendingEdit={pendingEdit}
                       childDocuments={childDocs}
+                      prerequisites={
+                        block.id === 'blk_00'
+                          ? document.prerequisites
+                          : undefined
+                      }
+                      learnerProfile={profile}
+                      seedingPrerequisiteTopic={seedingPrerequisiteTopic}
                       onSelectDocument={(docId) =>
                         void handleSelectDocument(docId)
                       }
+                      onTogglePrerequisiteKnown={handleTogglePrerequisiteKnown}
+                      onSeedPrerequisite={handleSeedPrerequisite}
                       onOpenChat={handleOpenChat}
                       onSendChatMessage={handleSendChatMessage}
                       onIntegrateChat={handleIntegrateChat}

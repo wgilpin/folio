@@ -31,3 +31,36 @@ When rendering Block 0 (`block.id === 'blk_00'`) in `ConceptBlockCard`, if `prer
 ## Out of scope
 
 - Cloud sync, multi-user accounts, persistent chat histories, or code execution kernels.
+
+## Build note — 2026-10-18
+
+- **Tasks done:**
+  - Extended `ConceptBlockCard` (`src/client/components/ConceptBlockCard.tsx`) with `prerequisites`, `learnerProfile`, `seedingPrerequisiteTopic`, `onTogglePrerequisiteKnown`, and `onSeedPrerequisite` props, plus `extractPrerequisiteTopicsFromMarkdown` fallback parsing for `blk_00`.
+  - Rendered the interactive `Prerequisite Chips` bar (`data-testid="prerequisite-chips-bar"`) inside `blk_00` showing each prerequisite topic, its familiarity status badge (`unseen` / `learning` / `known`), the `✓ I know this` toggle button, and the `↳ Seed Prerequisite` action button.
+  - Updated `App` (`src/client/App.tsx`) to track `profile` (`LearnerProfile`) and `seedingPrerequisiteTopic`, wire `PUT /api/profile/topics` for toggling topic familiarity, and wire `POST /api/prerequisites/seed` to create and switch into the child prerequisite sub-document.
+- **Tests added:**
+  - `src/client/__tests__/PrerequisiteChips.test.tsx` — `renders Prerequisite Chips in blk_00 and toggles topic known status via PUT /api/profile/topics` (AC-1)
+  - `src/client/__tests__/PrerequisiteChips.test.tsx` — `seeds a prerequisite sub-document from blk_00 via POST /api/prerequisites/seed and navigates to the new child document` (AC-2)
+- **Suite result:** 14 test files passed, 33 tests passed (`npm test`).
+- **Deviations from plan:** None.
+
+---
+
+## Review — 2026-10-18
+
+**Verdict:** pass
+
+### Pass 1 — Conformance
+
+| Criterion | Met | Test |
+|---|---|---|
+| AC-1 | yes | `src/client/__tests__/PrerequisiteChips.test.tsx` — `renders Prerequisite Chips in blk_00 and toggles topic known status via PUT /api/profile/topics` |
+| AC-2 | yes | `src/client/__tests__/PrerequisiteChips.test.tsx` — `seeds a prerequisite sub-document from blk_00 via POST /api/prerequisites/seed and navigates to the new child document` |
+
+### Pass 2 — Drift
+
+- None
+
+### Pass 3 — Correctness
+
+- None
