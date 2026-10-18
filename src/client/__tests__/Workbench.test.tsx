@@ -134,4 +134,301 @@ describe('Workbench UI', () => {
     expect(sidebar).toHaveTextContent('3. Canonical Equations of Motion');
     expect(sidebar).toHaveTextContent('4. Phase Space Volume Conservation');
   });
+
+  it('edits raw Markdown inline on a Concept Block and persists via PUT /api/blocks/:id', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+
+      if (url.endsWith('/api/doc') && (!init?.method || init.method === 'GET')) {
+        return new Response(
+          JSON.stringify({
+            document: {
+              id: 'index',
+              title: 'Hamiltonian Mechanics',
+              filename: 'index.md',
+              parentId: null,
+              parentBlockId: null,
+              childDocIds: [],
+            },
+            blocks: [
+              {
+                id: 'blk_01',
+                markdown:
+                  '## 1. Phase Space Coordinates\n\nInitial phase space explanation.',
+              },
+              {
+                id: 'blk_02',
+                markdown:
+                  '## 2. Legendre Transformation\n\nTransforming from Lagrangian to Hamiltonian.',
+              },
+            ],
+            toc: [
+              { level: 2, text: '1. Phase Space Coordinates', blockId: 'blk_01' },
+              { level: 2, text: '2. Legendre Transformation', blockId: 'blk_02' },
+            ],
+            modelId: 'anthropic:claude-opus-4-6',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (url.endsWith('/api/blocks/blk_01') && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body));
+        expect(body.markdown).toBe(
+          '## 1. Symplectic Geometry\n\nUpdated symplectic manifold explanation.'
+        );
+
+        return new Response(
+          JSON.stringify({
+            document: {
+              id: 'index',
+              title: 'Hamiltonian Mechanics',
+              filename: 'index.md',
+              parentId: null,
+              parentBlockId: null,
+              childDocIds: [],
+            },
+            blocks: [
+              {
+                id: 'blk_01',
+                markdown:
+                  '## 1. Symplectic Geometry\n\nUpdated symplectic manifold explanation.',
+              },
+              {
+                id: 'blk_02',
+                markdown:
+                  '## 2. Legendre Transformation\n\nTransforming from Lagrangian to Hamiltonian.',
+              },
+            ],
+            toc: [
+              { level: 2, text: '1. Symplectic Geometry', blockId: 'blk_01' },
+              { level: 2, text: '2. Legendre Transformation', blockId: 'blk_02' },
+            ],
+            modelId: 'anthropic:claude-opus-4-6',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response('Not Found', { status: 404 });
+    });
+
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(
+      await screen.findByRole('heading', { name: '1. Phase Space Coordinates' })
+    ).toBeInTheDocument();
+
+    // Open raw Markdown editor and test Escape cancel first
+    const editBtn = screen.getByRole('button', {
+      name: 'Edit Markdown for blk_01',
+    });
+    await user.click(editBtn);
+
+    const textarea = screen.getByRole('textbox', {
+      name: /raw markdown for blk_01/i,
+    });
+    expect(textarea).toHaveValue(
+      '## 1. Phase Space Coordinates\n\nInitial phase space explanation.'
+    );
+
+    await user.keyboard('{Escape}');
+    expect(
+      screen.queryByRole('textbox', { name: /raw markdown for blk_01/i })
+    ).not.toBeInTheDocument();
+
+    // Re-open raw Markdown editor, change text, and click Save
+    await user.click(
+      screen.getByRole('button', { name: 'Edit Markdown for blk_01' })
+    );
+    const activeTextarea = screen.getByRole('textbox', {
+      name: /raw markdown for blk_01/i,
+    });
+    await user.clear(activeTextarea);
+    await user.type(
+      activeTextarea,
+      '## 1. Symplectic Geometry\n\nUpdated symplectic manifold explanation.'
+    );
+
+    const saveBtn = screen.getByRole('button', { name: /save/i });
+    await user.click(saveBtn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: '1. Symplectic Geometry' })
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText(/Updated symplectic manifold explanation\./i)
+    ).toBeInTheDocument();
+
+    const sidebar = screen.getByRole('navigation', { name: /notebook sidebar/i });
+    expect(sidebar).toHaveTextContent('1. Symplectic Geometry');
+  });
+
+  it('splits, merges, and deletes Concept Blocks from the card action bar', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+
+      if (url.endsWith('/api/doc') && (!init?.method || init.method === 'GET')) {
+        return new Response(
+          JSON.stringify({
+            document: {
+              id: 'index',
+              title: 'Hamiltonian Mechanics',
+              filename: 'index.md',
+              parentId: null,
+              parentBlockId: null,
+              childDocIds: [],
+            },
+            blocks: [
+              {
+                id: 'blk_01',
+                markdown:
+                  '## 1. Phase Space Coordinates\n\nFirst paragraph.\n\nSecond paragraph.',
+              },
+              {
+                id: 'blk_02',
+                markdown: '## 2. Canonical Equations\n\nEquations of motion.',
+              },
+            ],
+            toc: [
+              { level: 2, text: '1. Phase Space Coordinates', blockId: 'blk_01' },
+              { level: 2, text: '2. Canonical Equations', blockId: 'blk_02' },
+            ],
+            modelId: 'anthropic:claude-opus-4-6',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (url.endsWith('/api/blocks/blk_01/split') && init?.method === 'POST') {
+        return new Response(
+          JSON.stringify({
+            document: {
+              id: 'index',
+              title: 'Hamiltonian Mechanics',
+              filename: 'index.md',
+              parentId: null,
+              parentBlockId: null,
+              childDocIds: [],
+            },
+            blocks: [
+              {
+                id: 'blk_01',
+                markdown: '## 1. Phase Space Coordinates\n\nFirst paragraph.',
+              },
+              {
+                id: 'blk_03',
+                markdown: 'Second paragraph.',
+              },
+              {
+                id: 'blk_02',
+                markdown: '## 2. Canonical Equations\n\nEquations of motion.',
+              },
+            ],
+            toc: [
+              { level: 2, text: '1. Phase Space Coordinates', blockId: 'blk_01' },
+              { level: 2, text: '2. Canonical Equations', blockId: 'blk_02' },
+            ],
+            modelId: 'anthropic:claude-opus-4-6',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (url.endsWith('/api/blocks/blk_01/merge') && init?.method === 'POST') {
+        return new Response(
+          JSON.stringify({
+            document: {
+              id: 'index',
+              title: 'Hamiltonian Mechanics',
+              filename: 'index.md',
+              parentId: null,
+              parentBlockId: null,
+              childDocIds: [],
+            },
+            blocks: [
+              {
+                id: 'blk_01',
+                markdown:
+                  '## 1. Phase Space Coordinates\n\nFirst paragraph.\n\nSecond paragraph.',
+              },
+              {
+                id: 'blk_02',
+                markdown: '## 2. Canonical Equations\n\nEquations of motion.',
+              },
+            ],
+            toc: [
+              { level: 2, text: '1. Phase Space Coordinates', blockId: 'blk_01' },
+              { level: 2, text: '2. Canonical Equations', blockId: 'blk_02' },
+            ],
+            modelId: 'anthropic:claude-opus-4-6',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (url.endsWith('/api/blocks/blk_02') && init?.method === 'DELETE') {
+        return new Response(
+          JSON.stringify({
+            document: {
+              id: 'index',
+              title: 'Hamiltonian Mechanics',
+              filename: 'index.md',
+              parentId: null,
+              parentBlockId: null,
+              childDocIds: [],
+            },
+            blocks: [
+              {
+                id: 'blk_01',
+                markdown:
+                  '## 1. Phase Space Coordinates\n\nFirst paragraph.\n\nSecond paragraph.',
+              },
+            ],
+            toc: [
+              { level: 2, text: '1. Phase Space Coordinates', blockId: 'blk_01' },
+            ],
+            modelId: 'anthropic:claude-opus-4-6',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response('Not Found', { status: 404 });
+    });
+
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(
+      await screen.findByRole('heading', { name: '1. Phase Space Coordinates' })
+    ).toBeInTheDocument();
+
+    // 1. Split blk_01
+    await user.click(screen.getByRole('button', { name: 'Split blk_01' }));
+    expect(await screen.findByTestId('concept-block-blk_03')).toBeInTheDocument();
+
+    // 2. Merge blk_01
+    await user.click(screen.getByRole('button', { name: 'Merge blk_01' }));
+    await waitFor(() => {
+      expect(screen.queryByTestId('concept-block-blk_03')).not.toBeInTheDocument();
+    });
+
+    // 3. Delete blk_02
+    await user.click(screen.getByRole('button', { name: 'Delete blk_02' }));
+    await waitFor(() => {
+      expect(screen.queryByTestId('concept-block-blk_02')).not.toBeInTheDocument();
+    });
+
+    const sidebar = screen.getByRole('navigation', { name: /notebook sidebar/i });
+    expect(sidebar).not.toHaveTextContent('2. Canonical Equations');
+  });
 });
+

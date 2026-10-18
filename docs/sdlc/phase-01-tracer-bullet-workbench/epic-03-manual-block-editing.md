@@ -39,3 +39,66 @@ Every `ConceptBlockCard` exposes manual controls (`Edit MD`, `Split`, `Merge`, `
 ## Notes
 
 - Preserve keyboard accessibility from [design.md](../../design.md): `Cmd/Ctrl + Enter` saves raw Markdown edits, `Escape` cancels raw Markdown editing, and action buttons carry explicit `aria-label` attributes (`Edit Markdown for <blockId>`, `Split <blockId>`, `Merge <blockId>`, `Delete <blockId>`).
+
+---
+
+## Build note — 2026-10-18
+
+**Result:** green
+
+### Tasks done
+
+- Added manual block mutation methods (`updateBlock`, `splitBlock`, `mergeBlockWithNext`, `deleteBlock`) to `WorkspaceStore` in `src/server/store.ts` that persist immediately to `index.md` on disk and recompute the Table of Contents.
+- Added Hono routes `PUT /api/blocks/:id`, `POST /api/blocks/:id/split`, `POST /api/blocks/:id/merge`, and `DELETE /api/blocks/:id` in `src/server/app.ts`.
+- Updated `ConceptBlockCard` (`src/client/components/ConceptBlockCard.tsx`) with `Edit MD`, `Split`, `Merge`, and `Delete` action buttons (`aria-label` attributes per `design.md`) and the `editing-raw` monospace textarea mode supporting `Save` / `Cancel` (`Cmd/Ctrl + Enter` and `Escape`).
+- Wired manual block actions in `src/client/App.tsx` to update the rendered Concept Blocks and Sidebar Table of Contents.
+- Added automated API and UI tests in `src/server/__tests__/api.test.ts` and `src/client/__tests__/Workbench.test.tsx`.
+
+### Tests added
+
+- `src/server/__tests__/api.test.ts` — `PUT /api/blocks/:id updates block markdown on disk and refreshes ToC`
+- `src/server/__tests__/api.test.ts` — `POST /api/blocks/:id/split, POST /api/blocks/:id/merge, and DELETE /api/blocks/:id mutate blocks in index.md`
+- `src/client/__tests__/Workbench.test.tsx` — `edits raw Markdown inline on a Concept Block and persists via PUT /api/blocks/:id`
+- `src/client/__tests__/Workbench.test.tsx` — `splits, merges, and deletes Concept Blocks from the card action bar`
+
+### Suite result
+
+- Command: `npm test`
+- Output: `Test Files 4 passed (4), Tests 11 passed (11)`
+
+### Deviations from the plan
+
+None
+
+### Follow-ups
+
+- Implement inline ephemeral cell Q&A chat and multi-cell `Integrate` diff gates in Phase 02.
+
+---
+
+## Review — 2026-10-18
+
+**Verdict:** pass
+
+### Acceptance criteria
+
+| AC | Met | Proved by |
+|---|---|---|
+| AC-1 | yes | `src/server/__tests__/api.test.ts` — `PUT /api/blocks/:id updates block markdown on disk and refreshes ToC` |
+| AC-2 | yes | `src/server/__tests__/api.test.ts` — `POST /api/blocks/:id/split, POST /api/blocks/:id/merge, and DELETE /api/blocks/:id mutate blocks in index.md` |
+| AC-3 | yes | `src/server/__tests__/api.test.ts` — `POST /api/blocks/:id/split, POST /api/blocks/:id/merge, and DELETE /api/blocks/:id mutate blocks in index.md` |
+| AC-4 | yes | `src/server/__tests__/api.test.ts` — `POST /api/blocks/:id/split, POST /api/blocks/:id/merge, and DELETE /api/blocks/:id mutate blocks in index.md` |
+| AC-5 | yes | `src/client/__tests__/Workbench.test.tsx` — `edits raw Markdown inline on a Concept Block and persists via PUT /api/blocks/:id` & `splits, merges, and deletes Concept Blocks from the card action bar` |
+
+### Drift
+
+None.
+
+### Findings
+
+None.
+
+### Follow-ups
+
+None.
+

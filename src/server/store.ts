@@ -9,6 +9,7 @@ import {
 } from '../shared/schema.js';
 import {
   extractToc,
+  generateBlockId,
   parseMarkdownBlocks,
   serializeMarkdownBlocks,
 } from './markdown.js';
@@ -17,6 +18,68 @@ export interface LoadedDocument {
   document: DocumentNode | null;
   blocks: ConceptBlock[];
   toc: TocItem[];
+}
+
+function splitMarkdownContent(markdown: string, offset?: number): [string, string] {
+  const normalized = markdown.replace(/\r\n/g, '\n').trim();
+  if (
+    typeof offset === 'number' &&
+    offset > 0 &&
+    offset < normalized.length
+  ) {
+    const first = normalized.slice(0, offset).trim();
+    const second = normalized.slice(offset).trim();
+    if (first && second) {
+      return [first, second];
+    }
+  }
+
+  // Split into paragraphs while keeping fenced code blocks intact
+  const lines = normalized.split('\n');
+  const paragraphs: string[] = [];
+  let currentLines: string[] = [];
+  let inFence = false;
+
+  for (const line of lines) {
+    if (/^(`{3,}|~{3,})/.test(line.trim())) {
+      inFence = !inFence;
+    }
+    if (!inFence && line.trim() === '') {
+      if (currentLines.length > 0) {
+        paragraphs.push(currentLines.join('\n').trim());
+        currentLines = [];
+      }
+    } else {
+      currentLines.push(line);
+    }
+  }
+  if (currentLines.length > 0) {
+    paragraphs.push(currentLines.join('\n').trim());
+  }
+
+  if (paragraphs.length >= 2) {
+    const mid = Math.ceil(paragraphs.length / 2);
+    return [
+      paragraphs.slice(0, mid).join('\n\n'),
+      paragraphs.slice(mid).join('\n\n'),
+    ];
+  }
+
+  if (lines.length >= 2) {
+    const mid = Math.ceil(lines.length / 2);
+    return [
+      lines.slice(0, mid).join('\n').trim(),
+      lines.slice(mid).join('\n').trim(),
+    ];
+  }
+
+  const words = normalized.split(/\s+/);
+  if (words.length >= 2) {
+    const mid = Math.ceil(words.length / 2);
+    return [words.slice(0, mid).join(' '), words.slice(mid).join(' ')];
+  }
+
+  return [normalized, normalized];
 }
 
 export class WorkspaceStore {
@@ -128,5 +191,144 @@ export class WorkspaceStore {
       blocks,
       toc,
     };
+  }
+
+  private nextAvailableBlockId(blocks: ConceptBlock[]): string {
+    const used = new Set(blocks.map((b) => b.id));
+    let idx = blocks.length;
+    let candidate = generateBlockId(idx);
+    while (used.has(candidate)) {
+      idx += 1;
+      candidate = generateBlockId(idx);
+    }
+    return candidate;
+  }
+
+  async updateBlock(
+    blockId: string,
+    markdown: string,
+    docId = 'index'
+  ): Promise<LoadedDocument> {
+    const loaded = await this.loadDocument(docId);
+    if (!loaded.document) {
+      throw new Error(`Document not found: ${docId}`);
+    }
+
+    const index = loaded.blocks.findIndex((b) => b.id === blockId);
+    if (index === -1) {
+      throw new Error(`Block not found: ${blockId}`);
+    }
+
+    const updatedBlocks = [...loaded.blocks];
+    updatedBlocks[index] = {
+      id: blockId,
+      markdown: markdown.trim(),
+    };
+
+    return this.saveDocument(loaded.document.title, updatedBlocks, {
+      id: loaded.document.id,
+      filename: loaded.document.filename,
+      parentId: loaded.document.parentId,
+      parentBlockId: loaded.document.parentBlockId,
+    });
+  }
+
+  async splitBlock(
+    blockId: string,
+    options?: { offset?: number; docId?: string }
+  ): Promise<LoadedDocument> {
+    const docId = options?.docId ?? 'index';
+    const loaded = await this.loadDocument(docId);
+    if (!loaded.document) {
+      throw new Error(`Document not found: ${docId}`);
+    }
+
+    const index = loaded.blocks.findIndex((b) => b.id === blockId);
+    if (index === -1) {
+      throw new Error(`Block not found: ${blockId}`);
+    }
+
+    const target = loaded.blocks[index];
+    const [firstMarkdown, secondMarkdown] = splitMarkdownContent(
+      target.markdown,
+      options?.offset
+    );
+    const newBlockId = this.nextAvailableBlockId(loaded.blocks);
+
+    const updatedBlocks = [
+      ...loaded.blocks.slice(0, index),
+      { id: target.id, markdown: firstMarkdown },
+      { id: newBlockId, markdown: secondMarkdown },
+      ...loaded.blocks.slice(index + 1),
+    ];
+
+    return this.saveDocument(loaded.document.title, updatedBlocks, {
+      id: loaded.document.id,
+      filename: loaded.document.filename,
+      parentId: loaded.document.parentId,
+      parentBlockId: loaded.document.parentBlockId,
+    });
+  }
+
+  async mergeBlockWithNext(
+    blockId: string,
+    docId = 'index'
+  ): Promise<LoadedDocument> {
+    const loaded = await this.loadDocument(docId);
+    if (!loaded.document) {
+      throw new Error(`Document not found: ${docId}`);
+    }
+
+    const index = loaded.blocks.findIndex((b) => b.id === blockId);
+    if (index === -1) {
+      throw new Error(`Block not found: ${blockId}`);
+    }
+    if (index >= loaded.blocks.length - 1) {
+      throw new Error(`Cannot merge last block: ${blockId}`);
+    }
+
+    const current = loaded.blocks[index];
+    const next = loaded.blocks[index + 1];
+    const mergedBlock: ConceptBlock = {
+      id: current.id,
+      markdown: `${current.markdown.trim()}\n\n${next.markdown.trim()}`,
+    };
+
+    const updatedBlocks = [
+      ...loaded.blocks.slice(0, index),
+      mergedBlock,
+      ...loaded.blocks.slice(index + 2),
+    ];
+
+    return this.saveDocument(loaded.document.title, updatedBlocks, {
+      id: loaded.document.id,
+      filename: loaded.document.filename,
+      parentId: loaded.document.parentId,
+      parentBlockId: loaded.document.parentBlockId,
+    });
+  }
+
+  async deleteBlock(
+    blockId: string,
+    docId = 'index'
+  ): Promise<LoadedDocument> {
+    const loaded = await this.loadDocument(docId);
+    if (!loaded.document) {
+      throw new Error(`Document not found: ${docId}`);
+    }
+
+    const index = loaded.blocks.findIndex((b) => b.id === blockId);
+    if (index === -1) {
+      throw new Error(`Block not found: ${blockId}`);
+    }
+
+    const updatedBlocks = loaded.blocks.filter((b) => b.id !== blockId);
+
+    return this.saveDocument(loaded.document.title, updatedBlocks, {
+      id: loaded.document.id,
+      filename: loaded.document.filename,
+      parentId: loaded.document.parentId,
+      parentBlockId: loaded.document.parentBlockId,
+    });
   }
 }

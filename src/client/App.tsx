@@ -63,6 +63,15 @@ export function App(): React.ReactElement {
     };
   }, []);
 
+  const applyDocResponse = (payload: DocApiResponse) => {
+    setDocument(payload.document);
+    setBlocks(payload.blocks);
+    setToc(payload.toc);
+    if (payload.modelId) {
+      setModelId(payload.modelId);
+    }
+  };
+
   const handleSeed = async (prompt: string) => {
     setIsSeeding(true);
     setSeedError(null);
@@ -79,13 +88,7 @@ export function App(): React.ReactElement {
         throw new Error(data.error ?? `Failed to seed topic (${res.status})`);
       }
 
-      const payload = data as DocApiResponse;
-      setDocument(payload.document);
-      setBlocks(payload.blocks);
-      setToc(payload.toc);
-      if (payload.modelId) {
-        setModelId(payload.modelId);
-      }
+      applyDocResponse(data as DocApiResponse);
       setIsSeedModalOpen(false);
     } catch (err) {
       setSeedError(
@@ -93,6 +96,58 @@ export function App(): React.ReactElement {
       );
     } finally {
       setIsSeeding(false);
+    }
+  };
+
+  const handleUpdateBlock = async (blockId: string, markdown: string) => {
+    const res = await fetch(`/api/blocks/${encodeURIComponent(blockId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ markdown, docId: document?.id ?? 'index' }),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as DocApiResponse;
+      applyDocResponse(data);
+    }
+  };
+
+  const handleSplitBlock = async (blockId: string) => {
+    const res = await fetch(
+      `/api/blocks/${encodeURIComponent(blockId)}/split`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ docId: document?.id ?? 'index' }),
+      }
+    );
+    if (res.ok) {
+      const data = (await res.json()) as DocApiResponse;
+      applyDocResponse(data);
+    }
+  };
+
+  const handleMergeBlock = async (blockId: string) => {
+    const res = await fetch(
+      `/api/blocks/${encodeURIComponent(blockId)}/merge`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ docId: document?.id ?? 'index' }),
+      }
+    );
+    if (res.ok) {
+      const data = (await res.json()) as DocApiResponse;
+      applyDocResponse(data);
+    }
+  };
+
+  const handleDeleteBlock = async (blockId: string) => {
+    const res = await fetch(`/api/blocks/${encodeURIComponent(blockId)}`, {
+      method: 'DELETE',
+    });
+    if (res.ok) {
+      const data = (await res.json()) as DocApiResponse;
+      applyDocResponse(data);
     }
   };
 
@@ -168,8 +223,16 @@ export function App(): React.ReactElement {
               </header>
 
               <section aria-label="Concept Blocks">
-                {blocks.map((block) => (
-                  <ConceptBlockCard key={block.id} block={block} />
+                {blocks.map((block, idx) => (
+                  <ConceptBlockCard
+                    key={block.id}
+                    block={block}
+                    canMerge={idx < blocks.length - 1}
+                    onUpdateMarkdown={handleUpdateBlock}
+                    onSplitBlock={handleSplitBlock}
+                    onMergeBlock={handleMergeBlock}
+                    onDeleteBlock={handleDeleteBlock}
+                  />
                 ))}
               </section>
             </>
