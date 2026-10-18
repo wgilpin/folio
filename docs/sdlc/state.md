@@ -18,9 +18,14 @@ Updated: 2026-10-18
 - explore: skipped
 - architecture: approved 2026-10-18
 - design: approved 2026-10-18
-- phases: pending
+- phases: approved 2026-10-18
 
 ## Phases
+
+- [ ] 01-tracer-bullet-workbench — pending
+- [ ] 02-inline-chat-integrate — pending
+- [ ] 03-branching-document-tree — pending
+- [ ] 04-byom-pedagogical-controls — pending
 
 ## Notes for a fresh session
 
