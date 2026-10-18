@@ -3,6 +3,7 @@ import type {
   ConceptBlock,
   DocumentNode,
   EphemeralChatThread,
+  NotebookSettings,
   PendingSuggestedEdit,
   TocItem,
 } from '../shared/schema.js';
@@ -19,6 +20,9 @@ interface DocApiResponse {
   activeChat?: EphemeralChatThread | null;
   pendingEdits?: PendingSuggestedEdit[];
   modelId: string;
+  settings?: NotebookSettings;
+  workspaceDir?: string;
+  workspaces?: string[];
 }
 
 export function App(): React.ReactElement {
@@ -34,6 +38,14 @@ export function App(): React.ReactElement {
   const [isBranchingChat, setIsBranchingChat] = useState<boolean>(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [modelId, setModelId] = useState<string>('anthropic:claude-opus-4-6');
+  const [settings, setSettings] = useState<NotebookSettings>({
+    modelId: 'anthropic:claude-opus-4-6',
+    reasoningEffort: 'high',
+    activeProfileId: 'intuitive-physical',
+    customSystemPrompt: '',
+  });
+  const [workspaceDir, setWorkspaceDir] = useState<string>('');
+  const [workspaces, setWorkspaces] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSeeding, setIsSeeding] = useState<boolean>(false);
   const [seedError, setSeedError] = useState<string | null>(null);
@@ -59,8 +71,18 @@ export function App(): React.ReactElement {
     if (payload.pendingEdits !== undefined) {
       setPendingEdits(payload.pendingEdits);
     }
-    if (payload.modelId) {
+    if (payload.settings) {
+      setSettings(payload.settings);
+      setModelId(payload.settings.modelId);
+    } else if (payload.modelId) {
       setModelId(payload.modelId);
+      setSettings((prev) => ({ ...prev, modelId: payload.modelId }));
+    }
+    if (payload.workspaceDir !== undefined) {
+      setWorkspaceDir(payload.workspaceDir);
+    }
+    if (payload.workspaces !== undefined) {
+      setWorkspaces(payload.workspaces);
     }
   };
 
@@ -101,6 +123,55 @@ export function App(): React.ReactElement {
       const res = await fetch(`/api/doc?id=${encodeURIComponent(docId)}`);
       if (!res.ok) {
         throw new Error(`Failed to load document (${res.status})`);
+      }
+      const data = (await res.json()) as DocApiResponse;
+      applyDocResponse(data);
+      setActiveChat(null);
+      setActiveChatBlockId(null);
+      setChatError(null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateSettings = async (patch: Partial<NotebookSettings>) => {
+    setSettings((prev) => ({ ...prev, ...patch }));
+    if (patch.modelId !== undefined) {
+      setModelId(patch.modelId);
+    }
+
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as {
+          settings?: NotebookSettings;
+          modelId?: string;
+        };
+        if (data.settings) {
+          setSettings(data.settings);
+          setModelId(data.settings.modelId);
+        } else if (data.modelId) {
+          setModelId(data.modelId);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSwitchWorkspace = async (targetWorkspaceDir: string) => {
+    try {
+      const res = await fetch('/api/workspaces/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceDir: targetWorkspaceDir }),
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to switch workspace (${res.status})`);
       }
       const data = (await res.json()) as DocApiResponse;
       applyDocResponse(data);
@@ -384,10 +455,15 @@ export function App(): React.ReactElement {
         documents={documents}
         toc={toc}
         modelId={modelId}
+        settings={settings}
+        workspaceDir={workspaceDir}
+        workspaces={workspaces}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
         onOpenSeedModal={() => setIsSeedModalOpen(true)}
         onSelectDocument={(docId) => void handleSelectDocument(docId)}
+        onUpdateSettings={(patch) => void handleUpdateSettings(patch)}
+        onSwitchWorkspace={(dir) => void handleSwitchWorkspace(dir)}
       />
 
       <main

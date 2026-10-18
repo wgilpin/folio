@@ -36,3 +36,36 @@
 ## Out of scope
 
 - Global Learner Profile (`~/.folio/profile.json`) and interactive Block 0 Prerequisite Chips — covered in Phase 05.
+
+## Build note — 2026-10-18
+
+- **Tasks done:**
+  - Updated `SidebarTree` (`src/client/components/SidebarTree.tsx`) to render the Workspace Switcher section (`aria-label="Workspace directory path"` and `aria-label="Switch workspace"`, plus quick-switch buttons when multiple workspaces are known), BYOM model selector (`aria-label="Active Model"`) and reasoning effort selector (`aria-label="Reasoning Effort"`), and Pedagogical Profile selector (`aria-label="Pedagogical Profile"`) with custom prompt editor (`aria-label="Custom Pedagogical Prompt"` and `aria-label="Save custom pedagogical prompt"`).
+  - Updated `App` (`src/client/App.tsx`) to track `settings`, `workspaceDir`, and `workspaces` from `/api/doc`, handle `PUT /api/settings` via `handleUpdateSettings`, and handle `POST /api/workspaces/switch` via `handleSwitchWorkspace`.
+- **Tests added:**
+  - `src/client/__tests__/SidebarControls.test.tsx` (3 tests covering AC-1, AC-2, and AC-3)
+- **Suite result:** 12 test files passed, 28 tests passed (`npm test`).
+- **Deviations from plan:** None.
+
+---
+
+## Review — 2026-10-18
+
+**Verdict:** pass
+
+### Pass 1 — Conformance
+
+| Criterion | Met | Test |
+|---|---|---|
+| AC-1 | yes | `src/client/__tests__/SidebarControls.test.tsx` — `switches BYOM model and reasoning budget in SidebarTree and sends PUT /api/settings` |
+| AC-2 | yes | `src/client/__tests__/SidebarControls.test.tsx` — `switches pedagogical prompt profile and saves custom pedagogical instructions via PUT /api/settings` |
+| AC-3 | yes | `src/client/__tests__/SidebarControls.test.tsx` — `switches active notebook workspace folder from SidebarTree via POST /api/workspaces/switch and renders the new workspace document` |
+
+### Pass 2 — Drift
+
+- None
+
+### Pass 3 — Correctness
+
+- None
+

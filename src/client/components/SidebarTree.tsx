@@ -1,27 +1,72 @@
-import React from 'react';
-import type { DocumentNode, TocItem } from '../../shared/schema.js';
+import React, { useEffect, useState } from 'react';
+import type {
+  DocumentNode,
+  NotebookSettings,
+  PedagogicalProfileId,
+  ReasoningEffort,
+  TocItem,
+} from '../../shared/schema.js';
 
 export interface SidebarTreeProps {
   document: DocumentNode | null;
   documents?: Record<string, DocumentNode>;
   toc: TocItem[];
   modelId: string;
+  settings?: NotebookSettings;
+  workspaceDir?: string;
+  workspaces?: string[];
   collapsed: boolean;
   onToggleCollapse: () => void;
   onOpenSeedModal: () => void;
   onSelectDocument?: (docId: string) => void;
+  onUpdateSettings?: (patch: Partial<NotebookSettings>) => Promise<void> | void;
+  onSwitchWorkspace?: (workspaceDir: string) => Promise<void> | void;
 }
+
+const PRESET_MODELS = [
+  'anthropic:claude-opus-4-6',
+  'google:gemini-3.1-pro',
+  'openai:o3',
+];
 
 export function SidebarTree({
   document,
   documents = {},
   toc,
   modelId,
+  settings,
+  workspaceDir = '',
+  workspaces = [],
   collapsed,
   onToggleCollapse,
   onOpenSeedModal,
   onSelectDocument,
+  onUpdateSettings,
+  onSwitchWorkspace,
 }: SidebarTreeProps): React.ReactElement {
+  const effectiveModelId = settings?.modelId ?? modelId;
+  const effectiveReasoningEffort: ReasoningEffort =
+    settings?.reasoningEffort ?? 'high';
+  const effectiveProfileId: PedagogicalProfileId =
+    settings?.activeProfileId ?? 'intuitive-physical';
+  const effectiveCustomPrompt = settings?.customSystemPrompt ?? '';
+
+  const [workspaceInput, setWorkspaceInput] = useState<string>(workspaceDir);
+  const [customPromptDraft, setCustomPromptDraft] =
+    useState<string>(effectiveCustomPrompt);
+
+  useEffect(() => {
+    setWorkspaceInput(workspaceDir);
+  }, [workspaceDir]);
+
+  useEffect(() => {
+    setCustomPromptDraft(effectiveCustomPrompt);
+  }, [effectiveCustomPrompt]);
+
+  const modelOptions = PRESET_MODELS.includes(effectiveModelId)
+    ? PRESET_MODELS
+    : [...PRESET_MODELS, effectiveModelId];
+
   const allDocs = Object.values(documents);
   const rootDocs =
     allDocs.length > 0
@@ -177,6 +222,86 @@ export function SidebarTree({
           </div>
         </div>
 
+        <section style={{ marginBottom: '20px' }}>
+          <div
+            style={{
+              fontSize: '12px',
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              color: '#65635E',
+              marginBottom: '8px',
+            }}
+          >
+            Workspace
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <input
+              type="text"
+              aria-label="Workspace directory path"
+              value={workspaceInput}
+              onChange={(e) => setWorkspaceInput(e.target.value)}
+              placeholder="/path/to/workspace"
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: '12px',
+                color: '#18181B',
+                backgroundColor: '#FFFFFF',
+                border: '1px solid #E4DFD7',
+                borderRadius: '6px',
+                padding: '6px 8px',
+              }}
+            />
+            <button
+              type="button"
+              aria-label="Switch workspace"
+              onClick={() => {
+                if (workspaceInput.trim()) {
+                  void onSwitchWorkspace?.(workspaceInput.trim());
+                }
+              }}
+              style={{
+                backgroundColor: '#FFFFFF',
+                border: '1px solid #E4DFD7',
+                borderRadius: '6px',
+                padding: '6px 8px',
+                fontSize: '12px',
+                color: '#18181B',
+                cursor: 'pointer',
+                textAlign: 'center',
+              }}
+            >
+              Switch Workspace
+            </button>
+            {workspaces.length > 1 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {workspaces.map((ws) => (
+                  <button
+                    key={ws}
+                    type="button"
+                    onClick={() => void onSwitchWorkspace?.(ws)}
+                    style={{
+                      textAlign: 'left',
+                      fontSize: '11px',
+                      fontFamily: "'JetBrains Mono', monospace",
+                      padding: '4px 6px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      backgroundColor: ws === workspaceDir ? '#FFFFFF' : 'transparent',
+                      color: ws === workspaceDir ? '#18181B' : '#65635E',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {ws}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
         <section style={{ marginBottom: '24px' }}>
           <div
             style={{
@@ -261,31 +386,164 @@ export function SidebarTree({
           borderTop: '1px solid #E4DFD7',
           paddingTop: '12px',
           marginTop: '24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px',
         }}
       >
-        <div
-          style={{
-            fontSize: '12px',
-            color: '#65635E',
-            marginBottom: '4px',
-          }}
-        >
-          Active Model (.env)
+        <div>
+          <label
+            htmlFor="sidebar-active-model"
+            style={{
+              display: 'block',
+              fontSize: '12px',
+              color: '#65635E',
+              marginBottom: '4px',
+            }}
+          >
+            Active Model
+          </label>
+          <select
+            id="sidebar-active-model"
+            aria-label="Active Model"
+            value={effectiveModelId}
+            onChange={(e) => void onUpdateSettings?.({ modelId: e.target.value })}
+            style={{
+              width: '100%',
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: '12px',
+              color: '#18181B',
+              backgroundColor: '#FFFFFF',
+              border: '1px solid #E4DFD7',
+              borderRadius: '6px',
+              padding: '4px 8px',
+            }}
+          >
+            {modelOptions.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
         </div>
-        <div
-          style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: '12px',
-            color: '#18181B',
-            backgroundColor: '#FFFFFF',
-            border: '1px solid #E4DFD7',
-            borderRadius: '6px',
-            padding: '4px 8px',
-            wordBreak: 'break-all',
-          }}
-        >
-          {modelId}
+
+        <div>
+          <label
+            htmlFor="sidebar-reasoning-effort"
+            style={{
+              display: 'block',
+              fontSize: '12px',
+              color: '#65635E',
+              marginBottom: '4px',
+            }}
+          >
+            Reasoning Effort
+          </label>
+          <select
+            id="sidebar-reasoning-effort"
+            aria-label="Reasoning Effort"
+            value={effectiveReasoningEffort}
+            onChange={(e) =>
+              void onUpdateSettings?.({
+                reasoningEffort: e.target.value as ReasoningEffort,
+              })
+            }
+            style={{
+              width: '100%',
+              fontSize: '12px',
+              color: '#18181B',
+              backgroundColor: '#FFFFFF',
+              border: '1px solid #E4DFD7',
+              borderRadius: '6px',
+              padding: '4px 8px',
+            }}
+          >
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+          </select>
         </div>
+
+        <div>
+          <label
+            htmlFor="sidebar-pedagogical-profile"
+            style={{
+              display: 'block',
+              fontSize: '12px',
+              color: '#65635E',
+              marginBottom: '4px',
+            }}
+          >
+            Pedagogical Profile
+          </label>
+          <select
+            id="sidebar-pedagogical-profile"
+            aria-label="Pedagogical Profile"
+            value={effectiveProfileId}
+            onChange={(e) =>
+              void onUpdateSettings?.({
+                activeProfileId: e.target.value as PedagogicalProfileId,
+              })
+            }
+            style={{
+              width: '100%',
+              fontSize: '12px',
+              color: '#18181B',
+              backgroundColor: '#FFFFFF',
+              border: '1px solid #E4DFD7',
+              borderRadius: '6px',
+              padding: '4px 8px',
+            }}
+          >
+            <option value="intuitive-physical">Intuitive Physical Picture</option>
+            <option value="rigorous-derivation">Rigorous Derivation</option>
+            <option value="custom">Custom Prompt</option>
+          </select>
+        </div>
+
+        {effectiveProfileId === 'custom' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <textarea
+              aria-label="Custom Pedagogical Prompt"
+              value={customPromptDraft}
+              onChange={(e) => setCustomPromptDraft(e.target.value)}
+              rows={3}
+              placeholder="Custom pedagogical system prompt..."
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                fontSize: '12px',
+                color: '#18181B',
+                backgroundColor: '#FFFFFF',
+                border: '1px solid #E4DFD7',
+                borderRadius: '6px',
+                padding: '6px 8px',
+                fontFamily: "'Inter', system-ui, sans-serif",
+              }}
+            />
+            <button
+              type="button"
+              aria-label="Save custom pedagogical prompt"
+              onClick={() =>
+                void onUpdateSettings?.({
+                  activeProfileId: 'custom',
+                  customSystemPrompt: customPromptDraft,
+                })
+              }
+              style={{
+                backgroundColor: '#1D4ED8',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '6px 8px',
+                fontSize: '12px',
+                cursor: 'pointer',
+              }}
+            >
+              Save Prompt
+            </button>
+          </div>
+        )}
       </footer>
     </nav>
   );
