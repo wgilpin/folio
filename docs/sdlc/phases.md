@@ -1,6 +1,6 @@
 # Phases — folio
 
-Folio builds from a single-document tracer bullet (Phase 01) into the core single-document inline chat and multi-cell `Integrate` proof (Phase 02), then expands into a hierarchical multi-document tree with ancestor context (Phase 03), and finishes with runtime BYOM model/thinking controls and pedagogical prompt profiles (Phase 04).
+Folio builds from a single-document tracer bullet (Phase 01) into the core single-document inline chat and multi-cell `Integrate` proof (Phase 02), then expands into a hierarchical multi-document tree with ancestor context (Phase 03), adds runtime BYOM model/thinking controls and pedagogical prompt profiles (Phase 04), and layers in a cross-workspace Learner Profile with interactive Block 0 Prerequisite chips (Phase 05).
 
 ## Phase 01 — Tracer Bullet: Seed, Read, and Manual Block Workbench
 
@@ -38,6 +38,16 @@ Folio builds from a single-document tracer bullet (Phase 01) into the core singl
 
 **Works after this phase:** You can switch frontier models and thinking budgets on the fly from the sidebar, customize or select pedagogical system prompts (e.g., rigorous derivation vs. intuitive physical picture), and open different local notebook folders without restarting the server.
 
-**Not in this phase:** Cloud sync, multi-user accounts, persistent chat histories, or code execution kernels.
+**Not in this phase:** Cross-workspace learner topic ledger or interactive prerequisite chips, cloud sync, multi-user accounts, persistent chat histories, or code execution kernels.
 
 **Depends on:** Phase 01, Phase 02, Phase 03
+
+## Phase 05 — Cross-Workspace Learner Profile & Interactive Prerequisite Chips
+
+**Goal:** Persist a global Learner Profile (`~/.folio/profile.json`) tracking topic familiarity across all workspaces and render structured Prerequisite Chips in Block 0 (`blk_00`) with one-click **`↳ Seed Prerequisite`** sub-document generation and **`✓ I know this`** level toggles that calibrate the depth of newly seeded documents.
+
+**Works after this phase:** When you seed a topic, Folio checks your global Learner Profile and existing notebook history to pitch explanations at the right depth (diving straight into formalism when prerequisites like Lagrangian Mechanics are already known, or starting gently from intuition when they are unseen), and Block 0 displays interactive chips letting you either mark prerequisites as known or seed any prerequisite into a linked sub-document in one click.
+
+**Not in this phase:** Cloud sync, multi-user accounts, persistent chat histories, or code execution kernels.
+
+**Depends on:** Phase 01, Phase 02, Phase 03, Phase 04

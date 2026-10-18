@@ -59,8 +59,7 @@ export function SeedModal({
           lineHeight: 1.5,
         }}
       >
-        Enter a topic or physical/mathematical system to generate 4–8 initial
-        Concept Blocks with prose and Mermaid diagrams.
+        Enter a topic to generate 4–8 initial Concept Blocks.
       </p>
 
       {error && (

@@ -35,7 +35,7 @@
 - LLM: Vercel AI SDK 7 (`ai` + `@ai-sdk/anthropic`, `@ai-sdk/google`, `@ai-sdk/openai`) + Zod 4
 - Storage: Local filesystem Markdown (`.md`) with `<!-- folio:block id="<id>" -->` delimiters + `.folio/notebook.json` sidecar
 - Tests: Vitest 5 + React Testing Library, run with `npm test`
-- Deploy: Local process on `http://localhost:3000` started via `npm run dev`
+- Deploy: Local process on `http://127.0.0.1:4321` started via `npm run dev`
 
 ## Shape of the system
 

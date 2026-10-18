@@ -39,8 +39,13 @@ export const defaultSeedGenerator: SeedGenerator = async (
   const { object } = await generateObject({
     model,
     schema: SeedResultSchema,
-    system:
-      'You are an editorial technical notebook author. Generate a clear document title and 4 to 8 self-contained Markdown concept blocks exploring the user topic. Each concept block should start with a ## or ### heading, explain a distinct concept rigorously, and include a ```mermaid diagram where a visual relationship or flow clarifies the concept.',
+    system: [
+      'You are an editorial technical notebook author writing for a curious learner who may not already know the underlying mathematics or specialist notation.',
+      'Generate a clear document title and 4 to 8 self-contained Markdown concept blocks exploring the user topic:',
+      '1. The VERY FIRST block (Block 0) MUST start with `## 0. Prerequisites & Notation`. It must list the mathematical and conceptual prerequisites needed to understand this topic, define every symbol or notation that will appear later in plain English, and give the intuitive picture before any equations are used.',
+      '2. Subsequent blocks (`## 1. ...`, `## 2. ...`) should build step-by-step from intuition to formalism, explaining what each equation physically or conceptually means in plain words rather than assuming prior familiarity.',
+      '3. Only include a ```mermaid diagram in a block if a visual diagram genuinely clarifies a structure or flow; most blocks should be clean prose.',
+    ].join('\n'),
     prompt: `Seed a technical notebook document for the topic: ${prompt}`,
   });
 

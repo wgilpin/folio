@@ -69,7 +69,10 @@ export function createApp(options: CreateAppOptions): Hono {
         await seedGenerator(parsedReq.data.prompt)
       );
       const blocks = seedResult.blocks.map((markdown, index) => ({
-        id: generateBlockId(index),
+        id:
+          index === 0 && /^#{1,3}\s*0\b|prerequisites/i.test(markdown)
+            ? 'blk_00'
+            : generateBlockId(index),
         markdown: markdown.trim(),
       }));
 

@@ -10,7 +10,7 @@ Updated: 2026-10-18
 - LLM: Vercel AI SDK 7 (`ai` + `@ai-sdk/anthropic`, `@ai-sdk/google`, `@ai-sdk/openai`) + Zod 4
 - Storage: Local filesystem Markdown (`.md`) with `<!-- folio:block id="<id>" -->` delimiters + `.folio/notebook.json` sidecar
 - Tests: Vitest 5 + React Testing Library, run with `npm test`
-- Deploy: Local process on `http://localhost:3000` started via `npm run dev`
+- Deploy: Local process on `http://127.0.0.1:4321` started via `npm run dev`
 
 ## Stages
 
@@ -29,7 +29,9 @@ Updated: 2026-10-18
 - [ ] 02-inline-chat-integrate — pending
 - [ ] 03-branching-document-tree — pending
 - [ ] 04-byom-pedagogical-controls — pending
+- [ ] 05-learner-profile-prerequisites — pending
 
 ## Notes for a fresh session
 
 - Initial exploration notes and red-team findings live in `docs/initial-concept.md`.
+- Phase 05 covers the global Learner Profile (`~/.folio/profile.json` across workspaces) and interactive Block 0 Prerequisite Chips (`↳ Seed Prerequisite` + `✓ I know this`).

@@ -1,7 +1,57 @@
 import React, { useEffect, useState } from 'react';
+import katex from 'katex';
 import { marked } from 'marked';
 import type { ConceptBlock } from '../../shared/schema.js';
 import { MermaidDiagram } from './MermaidDiagram.js';
+
+export function renderMarkdownWithMath(markdown: string): string {
+  const mathTokens: string[] = [];
+  const stashMath = (tex: string, displayMode: boolean): string => {
+    const html = katex.renderToString(tex.trim(), {
+      displayMode,
+      throwOnError: false,
+    });
+    const token = `@@FOLIO_MATH_${mathTokens.length}@@`;
+    mathTokens.push(html);
+    return token;
+  };
+
+  // Preserve inline code spans so `$` inside backticks is never treated as math
+  const codeTokens: string[] = [];
+  let processed = markdown.replace(/(`+[^`]*`+)/g, (match) => {
+    const token = `@@FOLIO_CODE_${codeTokens.length}@@`;
+    codeTokens.push(match);
+    return token;
+  });
+
+  // Display math: $$...$$ and \[...\]
+  processed = processed.replace(/\$\$([\s\S]+?)\$\$/g, (_, tex: string) =>
+    stashMath(tex, true)
+  );
+  processed = processed.replace(/\\\[([\s\S]+?)\\\]/g, (_, tex: string) =>
+    stashMath(tex, true)
+  );
+
+  // Inline math: \(...\) and $...$
+  processed = processed.replace(/\\\(([\s\S]+?)\\\)/g, (_, tex: string) =>
+    stashMath(tex, false)
+  );
+  processed = processed.replace(
+    /(^|[^\\$])\$(?!\s)((?:\\.|[^$\n])+?)(?<!\s)\$/g,
+    (_, prefix: string, tex: string) => `${prefix}${stashMath(tex, false)}`
+  );
+
+  // Restore code spans before running marked
+  processed = processed.replace(/@@FOLIO_CODE_(\d+)@@/g, (_, idx: string) => {
+    return codeTokens[Number(idx)] ?? '';
+  });
+
+  const html = marked.parse(processed, { async: false }) as string;
+
+  return html.replace(/@@FOLIO_MATH_(\d+)@@/g, (_, idx: string) => {
+    return mathTokens[Number(idx)] ?? '';
+  });
+}
 
 export interface ConceptBlockCardProps {
   block: ConceptBlock;
@@ -259,7 +309,7 @@ export function ConceptBlockCard({
               return <MermaidDiagram key={index} code={segment.content} />;
             }
 
-            const html = marked.parse(segment.content, { async: false }) as string;
+            const html = renderMarkdownWithMath(segment.content);
             return (
               <div
                 key={index}
