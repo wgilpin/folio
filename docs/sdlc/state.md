@@ -24,7 +24,7 @@ Updated: 2026-10-18
 
 - [ ] 01-tracer-bullet-workbench — in progress
   - [x] epic-01-markdown-store — merged 2026-10-18
-  - [x] epic-02-seed-and-read-ui — reviewed 2026-10-18
+  - [x] epic-02-seed-and-read-ui — merged 2026-10-18
   - [ ] epic-03-manual-block-editing — pending
 - [ ] 02-inline-chat-integrate — pending
 - [ ] 03-branching-document-tree — pending
