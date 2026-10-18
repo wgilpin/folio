@@ -15,6 +15,16 @@ export const TocItemSchema = z.object({
 
 export type TocItem = z.infer<typeof TocItemSchema>;
 
+export const TopicFamiliaritySchema = z.enum(['unseen', 'learning', 'known']);
+
+export type TopicFamiliarity = z.infer<typeof TopicFamiliaritySchema>;
+
+export const LearnerProfileSchema = z.object({
+  topics: z.record(z.string(), TopicFamiliaritySchema).default({}),
+});
+
+export type LearnerProfile = z.infer<typeof LearnerProfileSchema>;
+
 export const DocumentNodeSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -22,6 +32,7 @@ export const DocumentNodeSchema = z.object({
   parentId: z.string().nullable(),
   parentBlockId: z.string().nullable(),
   childDocIds: z.array(z.string()),
+  prerequisites: z.array(z.string()).optional(),
 });
 
 export type DocumentNode = z.infer<typeof DocumentNodeSchema>;
@@ -87,6 +98,7 @@ export type NotebookState = z.infer<typeof NotebookStateSchema>;
 export const SeedResultSchema = z.object({
   title: z.string(),
   blocks: z.array(z.string()).min(4).max(8),
+  prerequisites: z.array(z.string()).optional(),
 });
 
 export type SeedResult = z.infer<typeof SeedResultSchema>;
