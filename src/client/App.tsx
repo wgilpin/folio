@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import type {
   ConceptBlock,
   DocumentNode,
+  EphemeralChatThread,
+  PendingSuggestedEdit,
   TocItem,
 } from '../shared/schema.js';
 import { ConceptBlockCard } from './components/ConceptBlockCard.js';
@@ -12,6 +14,8 @@ interface DocApiResponse {
   document: DocumentNode | null;
   blocks: ConceptBlock[];
   toc: TocItem[];
+  activeChat?: EphemeralChatThread | null;
+  pendingEdits?: PendingSuggestedEdit[];
   modelId: string;
 }
 
@@ -19,12 +23,33 @@ export function App(): React.ReactElement {
   const [document, setDocument] = useState<DocumentNode | null>(null);
   const [blocks, setBlocks] = useState<ConceptBlock[]>([]);
   const [toc, setToc] = useState<TocItem[]>([]);
+  const [activeChat, setActiveChat] = useState<EphemeralChatThread | null>(null);
+  const [activeChatBlockId, setActiveChatBlockId] = useState<string | null>(null);
+  const [pendingEdits, setPendingEdits] = useState<PendingSuggestedEdit[]>([]);
+  const [isSendingChat, setIsSendingChat] = useState<boolean>(false);
+  const [chatError, setChatError] = useState<string | null>(null);
   const [modelId, setModelId] = useState<string>('anthropic:claude-opus-4-6');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSeeding, setIsSeeding] = useState<boolean>(false);
   const [seedError, setSeedError] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [isSeedModalOpen, setIsSeedModalOpen] = useState<boolean>(false);
+
+  const applyDocResponse = (payload: DocApiResponse) => {
+    setDocument(payload.document);
+    setBlocks(payload.blocks);
+    setToc(payload.toc);
+    if (payload.activeChat !== undefined) {
+      setActiveChat(payload.activeChat);
+      setActiveChatBlockId(payload.activeChat?.blockId ?? null);
+    }
+    if (payload.pendingEdits !== undefined) {
+      setPendingEdits(payload.pendingEdits);
+    }
+    if (payload.modelId) {
+      setModelId(payload.modelId);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -37,12 +62,7 @@ export function App(): React.ReactElement {
         }
         const data = (await res.json()) as DocApiResponse;
         if (!cancelled) {
-          setDocument(data.document);
-          setBlocks(data.blocks);
-          setToc(data.toc);
-          if (data.modelId) {
-            setModelId(data.modelId);
-          }
+          applyDocResponse(data);
         }
       } catch (err) {
         if (!cancelled) {
@@ -62,15 +82,6 @@ export function App(): React.ReactElement {
       cancelled = true;
     };
   }, []);
-
-  const applyDocResponse = (payload: DocApiResponse) => {
-    setDocument(payload.document);
-    setBlocks(payload.blocks);
-    setToc(payload.toc);
-    if (payload.modelId) {
-      setModelId(payload.modelId);
-    }
-  };
 
   const handleSeed = async (prompt: string) => {
     setIsSeeding(true);
@@ -151,6 +162,62 @@ export function App(): React.ReactElement {
     }
   };
 
+  const handleOpenChat = (blockId: string) => {
+    if (pendingEdits.length > 0) {
+      return;
+    }
+    setChatError(null);
+    setActiveChatBlockId(blockId);
+    if (activeChat && activeChat.blockId !== blockId) {
+      setActiveChat(null);
+    }
+  };
+
+  const handleSendChatMessage = async (blockId: string, message: string) => {
+    setIsSendingChat(true);
+    setChatError(null);
+
+    try {
+      const res = await fetch(
+        `/api/blocks/${encodeURIComponent(blockId)}/chat`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message,
+            docId: document?.id ?? 'index',
+          }),
+        }
+      );
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error ?? `Failed to send message (${res.status})`);
+      }
+
+      setActiveChat(data.activeChat as EphemeralChatThread);
+      setActiveChatBlockId(blockId);
+    } catch (err) {
+      setChatError(
+        err instanceof Error ? err.message : 'Failed to send chat message'
+      );
+    } finally {
+      setIsSendingChat(false);
+    }
+  };
+
+  const handleDiscardChat = async (blockId: string) => {
+    setChatError(null);
+    try {
+      await fetch(`/api/blocks/${encodeURIComponent(blockId)}/chat`, {
+        method: 'DELETE',
+      });
+    } finally {
+      setActiveChat(null);
+      setActiveChatBlockId(null);
+    }
+  };
+
   return (
     <div
       style={{
@@ -223,17 +290,33 @@ export function App(): React.ReactElement {
               </header>
 
               <section aria-label="Concept Blocks">
-                {blocks.map((block, idx) => (
-                  <ConceptBlockCard
-                    key={block.id}
-                    block={block}
-                    canMerge={idx < blocks.length - 1}
-                    onUpdateMarkdown={handleUpdateBlock}
-                    onSplitBlock={handleSplitBlock}
-                    onMergeBlock={handleMergeBlock}
-                    onDeleteBlock={handleDeleteBlock}
-                  />
-                ))}
+                {blocks.map((block, idx) => {
+                  const isChatOpen = activeChatBlockId === block.id;
+                  const chatMessages =
+                    activeChat && activeChat.blockId === block.id
+                      ? activeChat.messages
+                      : [];
+
+                  return (
+                    <ConceptBlockCard
+                      key={block.id}
+                      block={block}
+                      canMerge={idx < blocks.length - 1}
+                      isChatOpen={isChatOpen}
+                      chatMessages={chatMessages}
+                      isSendingChat={isChatOpen && isSendingChat}
+                      chatError={isChatOpen ? chatError : null}
+                      askCellDisabled={pendingEdits.length > 0}
+                      onOpenChat={handleOpenChat}
+                      onSendChatMessage={handleSendChatMessage}
+                      onDiscardChat={handleDiscardChat}
+                      onUpdateMarkdown={handleUpdateBlock}
+                      onSplitBlock={handleSplitBlock}
+                      onMergeBlock={handleMergeBlock}
+                      onDeleteBlock={handleDeleteBlock}
+                    />
+                  );
+                })}
               </section>
             </>
           )}

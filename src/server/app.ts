@@ -1,9 +1,12 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { SeedResultSchema } from '../shared/schema.js';
+import { SeedResultSchema, type ChatMessage } from '../shared/schema.js';
+import { buildBoundedCellContext } from './context.js';
 import {
+  defaultCellChatGenerator,
   defaultSeedGenerator,
   getActiveModelId,
+  type CellChatGenerator,
   type SeedGenerator,
 } from './llm.js';
 import { generateBlockId } from './markdown.js';
@@ -12,6 +15,7 @@ import { WorkspaceStore } from './store.js';
 export interface CreateAppOptions {
   workspaceDir: string;
   seedGenerator?: SeedGenerator;
+  cellChatGenerator?: CellChatGenerator;
   modelId?: string;
 }
 
@@ -33,20 +37,38 @@ const MergeBlockRequestSchema = z.object({
   docId: z.string().optional(),
 });
 
+const ChatRequestSchema = z.object({
+  message: z.string().trim().min(1, 'Chat message is required'),
+  docId: z.string().optional(),
+});
+
 export function createApp(options: CreateAppOptions): Hono {
   const app = new Hono();
   const store = new WorkspaceStore(options.workspaceDir);
   const seedGenerator = options.seedGenerator ?? defaultSeedGenerator;
+  const cellChatGenerator =
+    options.cellChatGenerator ?? defaultCellChatGenerator;
 
   app.get('/api/doc', async (c) => {
     const docId = c.req.query('id') ?? 'index';
     const loaded = await store.loadDocument(docId);
     const modelId = options.modelId ?? getActiveModelId();
 
+    if (!loaded.document) {
+      return c.json({
+        document: null,
+        blocks: [],
+        toc: [],
+        modelId,
+      });
+    }
+
     return c.json({
       document: loaded.document,
       blocks: loaded.blocks,
       toc: loaded.toc,
+      activeChat: loaded.activeChat,
+      pendingEdits: loaded.pendingEdits,
       modelId,
     });
   });
@@ -86,6 +108,8 @@ export function createApp(options: CreateAppOptions): Hono {
         document: saved.document,
         blocks: saved.blocks,
         toc: saved.toc,
+        activeChat: saved.activeChat,
+        pendingEdits: saved.pendingEdits,
         modelId,
       });
     } catch (err) {
@@ -121,6 +145,8 @@ export function createApp(options: CreateAppOptions): Hono {
         document: saved.document,
         blocks: saved.blocks,
         toc: saved.toc,
+        activeChat: saved.activeChat,
+        pendingEdits: saved.pendingEdits,
         modelId,
       });
     } catch (err) {
@@ -159,6 +185,8 @@ export function createApp(options: CreateAppOptions): Hono {
         document: saved.document,
         blocks: saved.blocks,
         toc: saved.toc,
+        activeChat: saved.activeChat,
+        pendingEdits: saved.pendingEdits,
         modelId,
       });
     } catch (err) {
@@ -197,6 +225,8 @@ export function createApp(options: CreateAppOptions): Hono {
         document: saved.document,
         blocks: saved.blocks,
         toc: saved.toc,
+        activeChat: saved.activeChat,
+        pendingEdits: saved.pendingEdits,
         modelId,
       });
     } catch (err) {
@@ -219,6 +249,8 @@ export function createApp(options: CreateAppOptions): Hono {
         document: saved.document,
         blocks: saved.blocks,
         toc: saved.toc,
+        activeChat: saved.activeChat,
+        pendingEdits: saved.pendingEdits,
         modelId,
       });
     } catch (err) {
@@ -227,6 +259,71 @@ export function createApp(options: CreateAppOptions): Hono {
       const status = message.includes('not found') ? 404 : 400;
       return c.json({ error: message }, status);
     }
+  });
+
+  app.post('/api/blocks/:id/chat', async (c) => {
+    const blockId = c.req.param('id');
+    let rawBody: unknown;
+    try {
+      rawBody = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON request body' }, 400);
+    }
+
+    const parsedReq = ChatRequestSchema.safeParse(rawBody);
+    if (!parsedReq.success) {
+      return c.json({ error: 'Chat message is required' }, 400);
+    }
+
+    const docId = parsedReq.data.docId ?? 'index';
+    const pendingEdits = await store.getPendingEdits(docId);
+    if (pendingEdits.length > 0) {
+      return c.json({ error: 'Resolve pending suggested edits first' }, 409);
+    }
+
+    try {
+      const context = await buildBoundedCellContext(store, docId, blockId);
+      const existingChat = await store.getActiveChat(docId);
+      const priorMessages: ChatMessage[] =
+        existingChat && existingChat.blockId === blockId
+          ? existingChat.messages
+          : [];
+
+      const messagesForGenerator: ChatMessage[] = [
+        ...priorMessages,
+        { role: 'user', content: parsedReq.data.message },
+      ];
+      const modelId = options.modelId ?? getActiveModelId();
+
+      const assistantReply = await cellChatGenerator({
+        context,
+        messages: messagesForGenerator,
+        modelId,
+      });
+
+      const activeChat = await store.appendChatMessage(
+        docId,
+        blockId,
+        modelId,
+        parsedReq.data.message,
+        assistantReply
+      );
+
+      return c.json({ activeChat });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to process cell chat';
+      const status = message.includes('not found') ? 404 : 500;
+      return c.json({ error: message }, status);
+    }
+  });
+
+  app.delete('/api/blocks/:id/chat', async (c) => {
+    const blockId = c.req.param('id');
+    const docId = c.req.query('docId') ?? 'index';
+
+    await store.discardChat(docId, blockId);
+    return c.json({ activeChat: null });
   });
 
   return app;

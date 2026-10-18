@@ -1,10 +1,21 @@
-import { generateObject } from 'ai';
+import { generateObject, generateText } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { google } from '@ai-sdk/google';
 import { openai } from '@ai-sdk/openai';
-import { SeedResultSchema, type SeedResult } from '../shared/schema.js';
+import {
+  SeedResultSchema,
+  type ChatMessage,
+  type SeedResult,
+} from '../shared/schema.js';
+import type { BoundedCellContext } from './context.js';
 
 export type SeedGenerator = (prompt: string) => Promise<SeedResult>;
+
+export type CellChatGenerator = (input: {
+  context: BoundedCellContext;
+  messages: ChatMessage[];
+  modelId: string;
+}) => Promise<string>;
 
 export const DEFAULT_MODEL_ID = 'anthropic:claude-opus-4-6';
 
@@ -30,6 +41,39 @@ export function resolveLanguageModel(modelSpec: string) {
   }
 }
 
+export function formatBoundedContextPrompt(context: BoundedCellContext): string {
+  const tocLines = context.toc
+    .map((item) => `${'  '.repeat(item.level - 1)}- [${item.blockId}] ${item.text}`)
+    .join('\n');
+
+  const ancestorSection =
+    context.ancestorTocs.length > 0
+      ? context.ancestorTocs
+          .map(
+            (anc) =>
+              `Ancestor Document (${anc.title}):\n` +
+              anc.toc.map((t) => `  - [${t.blockId}] ${t.text}`).join('\n')
+          )
+          .join('\n\n') + '\n\n'
+      : '';
+
+  return [
+    `Document: ${context.title} (${context.docId})`,
+    ancestorSection + `Current Document Table of Contents:\n${tocLines || '(empty)'}`,
+    `Previous Block (N-1): ${
+      context.previousBlock
+        ? `[${context.previousBlock.id}]\n${context.previousBlock.markdown}`
+        : '(none — target is first block)'
+    }`,
+    `Target Block (N): [${context.targetBlock.id}]\n${context.targetBlock.markdown}`,
+    `Next Block (N+1): ${
+      context.nextBlock
+        ? `[${context.nextBlock.id}]\n${context.nextBlock.markdown}`
+        : '(none — target is last block)'
+    }`,
+  ].join('\n\n');
+}
+
 export const defaultSeedGenerator: SeedGenerator = async (
   prompt: string
 ): Promise<SeedResult> => {
@@ -50,4 +94,27 @@ export const defaultSeedGenerator: SeedGenerator = async (
   });
 
   return object;
+};
+
+export const defaultCellChatGenerator: CellChatGenerator = async ({
+  context,
+  messages,
+  modelId,
+}): Promise<string> => {
+  const model = resolveLanguageModel(modelId);
+  const { text } = await generateText({
+    model,
+    system: [
+      'You are an expert technical tutor answering questions about a specific Concept Block (Block N) inside a structured notebook.',
+      'Explain concepts clearly, ground equations in intuition, and stay focused on the target block while respecting the surrounding [N-1, N, N+1] context.',
+      '',
+      formatBoundedContextPrompt(context),
+    ].join('\n'),
+    messages: messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    })),
+  });
+
+  return text;
 };
