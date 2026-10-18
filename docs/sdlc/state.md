@@ -26,7 +26,10 @@ Updated: 2026-10-18
   - [x] epic-01-markdown-store — merged 2026-10-18
   - [x] epic-02-seed-and-read-ui — merged 2026-10-18
   - [x] epic-03-manual-block-editing — merged 2026-10-18
-- [ ] 02-inline-chat-integrate — pending
+- [ ] 02-inline-chat-integrate — in progress
+  - [ ] epic-01-bounded-chat-discard — pending
+  - [ ] epic-02-integrate-and-diff-gate — pending
+  - [ ] epic-03-diff-gate-ui — pending
 - [ ] 03-branching-document-tree — pending
 - [ ] 04-byom-pedagogical-controls — pending
 - [ ] 05-learner-profile-prerequisites — pending
