@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import katex from 'katex';
 import { marked } from 'marked';
-import type { ConceptBlock } from '../../shared/schema.js';
+import type { ChatMessage, ConceptBlock } from '../../shared/schema.js';
+import { InlineChatDrawer } from './InlineChatDrawer.js';
 import { MermaidDiagram } from './MermaidDiagram.js';
 
 export function renderMarkdownWithMath(markdown: string): string {
@@ -56,6 +57,16 @@ export function renderMarkdownWithMath(markdown: string): string {
 export interface ConceptBlockCardProps {
   block: ConceptBlock;
   canMerge?: boolean;
+  isChatOpen?: boolean;
+  chatMessages?: ChatMessage[];
+  isSendingChat?: boolean;
+  isIntegratingChat?: boolean;
+  chatError?: string | null;
+  askCellDisabled?: boolean;
+  onOpenChat?: (blockId: string) => void;
+  onSendChatMessage?: (blockId: string, message: string) => Promise<void> | void;
+  onIntegrateChat?: (blockId: string) => Promise<void> | void;
+  onDiscardChat?: (blockId: string) => Promise<void> | void;
   onUpdateMarkdown?: (blockId: string, markdown: string) => Promise<void> | void;
   onSplitBlock?: (blockId: string) => Promise<void> | void;
   onMergeBlock?: (blockId: string) => Promise<void> | void;
@@ -114,6 +125,16 @@ const actionBtnStyle: React.CSSProperties = {
 export function ConceptBlockCard({
   block,
   canMerge = true,
+  isChatOpen = false,
+  chatMessages = [],
+  isSendingChat = false,
+  isIntegratingChat = false,
+  chatError = null,
+  askCellDisabled = false,
+  onOpenChat,
+  onSendChatMessage,
+  onIntegrateChat,
+  onDiscardChat,
   onUpdateMarkdown,
   onSplitBlock,
   onMergeBlock,
@@ -150,17 +171,19 @@ export function ConceptBlockCard({
     }
   };
 
+  const isHighlighted = isEditingRaw || isChatOpen;
+
   return (
     <article
       id={`block-${block.id}`}
       data-testid={`concept-block-${block.id}`}
       style={{
         backgroundColor: '#FFFFFF',
-        border: isEditingRaw ? '2px solid #1D4ED8' : '1px solid #E4DFD7',
+        border: isHighlighted ? '2px solid #1D4ED8' : '1px solid #E4DFD7',
         borderRadius: '8px',
         padding: '24px',
         marginBottom: '16px',
-        boxShadow: isEditingRaw
+        boxShadow: isHighlighted
           ? '0 2px 8px rgba(24, 24, 27, 0.06)'
           : 'none',
       }}
@@ -187,6 +210,28 @@ export function ConceptBlockCard({
         </span>
 
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button
+            type="button"
+            aria-label={`Ask cell ${block.id}`}
+            disabled={askCellDisabled}
+            title={
+              askCellDisabled
+                ? 'Resolve pending suggested edits first'
+                : undefined
+            }
+            onClick={() => onOpenChat?.(block.id)}
+            style={{
+              ...actionBtnStyle,
+              backgroundColor: isChatOpen ? '#1D4ED8' : '#FAF8F5',
+              color: isChatOpen ? '#FFFFFF' : '#1D4ED8',
+              borderColor: '#1D4ED8',
+              fontWeight: 500,
+              opacity: askCellDisabled ? 0.5 : 1,
+              cursor: askCellDisabled ? 'not-allowed' : 'pointer',
+            }}
+          >
+            Ask Cell
+          </button>
           <button
             type="button"
             aria-label={`Edit Markdown for ${block.id}`}
@@ -318,6 +363,19 @@ export function ConceptBlockCard({
             );
           })}
         </div>
+      )}
+
+      {isChatOpen && (
+        <InlineChatDrawer
+          blockId={block.id}
+          messages={chatMessages}
+          isSending={isSendingChat}
+          isIntegrating={isIntegratingChat}
+          error={chatError}
+          onSendMessage={(msg) => void onSendChatMessage?.(block.id, msg)}
+          onIntegrate={() => void onIntegrateChat?.(block.id)}
+          onDiscard={() => void onDiscardChat?.(block.id)}
+        />
       )}
     </article>
   );

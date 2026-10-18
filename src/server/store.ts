@@ -4,7 +4,9 @@ import {
   NotebookStateSchema,
   type ConceptBlock,
   type DocumentNode,
+  type EphemeralChatThread,
   type NotebookState,
+  type PendingSuggestedEdit,
   type TocItem,
 } from '../shared/schema.js';
 import {
@@ -18,6 +20,8 @@ export interface LoadedDocument {
   document: DocumentNode | null;
   blocks: ConceptBlock[];
   toc: TocItem[];
+  activeChat: EphemeralChatThread | null;
+  pendingEdits: PendingSuggestedEdit[];
 }
 
 function splitMarkdownContent(markdown: string, offset?: number): [string, string] {
@@ -113,6 +117,12 @@ export class WorkspaceStore {
 
   async loadDocument(docId = 'index'): Promise<LoadedDocument> {
     const state = await this.loadState();
+    const activeChat =
+      state.activeChat && state.activeChat.docId === docId
+        ? state.activeChat
+        : null;
+    const pendingEdits = state.pendingEdits.filter((e) => e.docId === docId);
+
     let docNode: DocumentNode | undefined = state.documents[docId];
     const filename = docNode?.filename ?? (docId === 'index' ? 'index.md' : `${docId}.md`);
     const filePath = path.join(this.workspaceDir, filename);
@@ -121,7 +131,13 @@ export class WorkspaceStore {
     try {
       rawMarkdown = await fs.readFile(filePath, 'utf-8');
     } catch {
-      return { document: null, blocks: [], toc: [] };
+      return {
+        document: null,
+        blocks: [],
+        toc: [],
+        activeChat,
+        pendingEdits,
+      };
     }
 
     const blocks = parseMarkdownBlocks(rawMarkdown);
@@ -146,6 +162,8 @@ export class WorkspaceStore {
       document: docNode,
       blocks,
       toc,
+      activeChat,
+      pendingEdits,
     };
   }
 
@@ -186,11 +204,76 @@ export class WorkspaceStore {
     await this.saveState(state);
 
     const toc = extractToc(blocks);
+    const activeChat =
+      state.activeChat && state.activeChat.docId === docId
+        ? state.activeChat
+        : null;
+    const pendingEdits = state.pendingEdits.filter((e) => e.docId === docId);
+
     return {
       document: docNode,
       blocks,
       toc,
+      activeChat,
+      pendingEdits,
     };
+  }
+
+  async getActiveChat(docId = 'index'): Promise<EphemeralChatThread | null> {
+    const state = await this.loadState();
+    if (state.activeChat && state.activeChat.docId === docId) {
+      return state.activeChat;
+    }
+    return null;
+  }
+
+  async getPendingEdits(docId = 'index'): Promise<PendingSuggestedEdit[]> {
+    const state = await this.loadState();
+    return state.pendingEdits.filter((e) => e.docId === docId);
+  }
+
+  async appendChatMessage(
+    docId: string,
+    blockId: string,
+    modelId: string,
+    userMessage: string,
+    assistantReply: string
+  ): Promise<EphemeralChatThread> {
+    const state = await this.loadState();
+    const priorMessages =
+      state.activeChat &&
+      state.activeChat.docId === docId &&
+      state.activeChat.blockId === blockId
+        ? state.activeChat.messages
+        : [];
+
+    const updatedChat: EphemeralChatThread = {
+      docId,
+      blockId,
+      modelId,
+      messages: [
+        ...priorMessages,
+        { role: 'user', content: userMessage },
+        { role: 'assistant', content: assistantReply },
+      ],
+    };
+
+    state.activeChat = updatedChat;
+    await this.saveState(state);
+    return updatedChat;
+  }
+
+  async discardChat(docId = 'index', blockId?: string): Promise<null> {
+    const state = await this.loadState();
+    if (
+      !blockId ||
+      !state.activeChat ||
+      (state.activeChat.docId === docId && state.activeChat.blockId === blockId)
+    ) {
+      state.activeChat = null;
+      await this.saveState(state);
+    }
+    return null;
   }
 
   private nextAvailableBlockId(blocks: ConceptBlock[]): string {

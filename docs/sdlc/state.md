@@ -27,7 +27,7 @@ Updated: 2026-10-18
   - [x] epic-02-seed-and-read-ui — merged 2026-10-18
   - [x] epic-03-manual-block-editing — merged 2026-10-18
 - [ ] 02-inline-chat-integrate — in progress
-  - [ ] epic-01-bounded-chat-discard — pending
+  - [x] epic-01-bounded-chat-discard — reviewed 2026-10-18
   - [ ] epic-02-integrate-and-diff-gate — pending
   - [ ] epic-03-diff-gate-ui — pending
 - [ ] 03-branching-document-tree — pending
