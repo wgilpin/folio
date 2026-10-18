@@ -14,6 +14,7 @@ import {
   type TocItem,
 } from '../shared/schema.js';
 import {
+  extractPrerequisitesFromBlock0,
   extractToc,
   generateBlockId,
   parseMarkdownBlocks,
@@ -227,6 +228,7 @@ export class WorkspaceStore {
       filename?: string;
       parentId?: string | null;
       parentBlockId?: string | null;
+      prerequisites?: string[];
     }
   ): Promise<LoadedDocument> {
     const docId = options?.id ?? 'index';
@@ -235,6 +237,13 @@ export class WorkspaceStore {
     const state = await this.loadState();
     const existing = state.documents[docId];
 
+    const resolvedPrerequisites =
+      options?.prerequisites ??
+      existing?.prerequisites ??
+      (blocks[0]?.id === 'blk_00'
+        ? extractPrerequisitesFromBlock0(blocks[0].markdown)
+        : undefined);
+
     const docNode: DocumentNode = {
       id: docId,
       title,
@@ -242,6 +251,9 @@ export class WorkspaceStore {
       parentId: options?.parentId ?? existing?.parentId ?? null,
       parentBlockId: options?.parentBlockId ?? existing?.parentBlockId ?? null,
       childDocIds: existing?.childDocIds ?? [],
+      ...(resolvedPrerequisites && resolvedPrerequisites.length > 0
+        ? { prerequisites: resolvedPrerequisites }
+        : {}),
     };
 
     state.documents[docId] = docNode;
@@ -513,6 +525,12 @@ export class WorkspaceStore {
       })
     );
 
+    const resolvedPrerequisites =
+      branchResult.prerequisites ??
+      (childBlocks[0]?.id === 'blk_00'
+        ? extractPrerequisitesFromBlock0(childBlocks[0].markdown)
+        : undefined);
+
     const parentTargetBlock = parentLoaded.blocks[blockIndex];
     const linkMarkdown = `[→ Deep dive: ${childTitle}](${childFilename})`;
     const updatedParentBlocks: ConceptBlock[] = [...parentLoaded.blocks];
@@ -535,6 +553,9 @@ export class WorkspaceStore {
       parentId: docId,
       parentBlockId: blockId,
       childDocIds: [],
+      ...(resolvedPrerequisites && resolvedPrerequisites.length > 0
+        ? { prerequisites: resolvedPrerequisites }
+        : {}),
     };
 
     state.documents[docId] = parentDocNode;
@@ -563,6 +584,28 @@ export class WorkspaceStore {
       pendingEdits: [],
       settings: this.resolveStateSettings(state),
     };
+  }
+
+  async branchPrerequisiteDocument(
+    parentDocId: string,
+    _topic: string,
+    seedResult: SeedResult
+  ): Promise<LoadedDocument> {
+    const state = await this.loadState();
+    if (state.pendingEdits.some((e) => e.docId === parentDocId)) {
+      throw new Error('Resolve pending suggested edits first');
+    }
+
+    const parentLoaded = await this.loadDocument(parentDocId);
+    if (!parentLoaded.document || parentLoaded.blocks.length === 0) {
+      throw new Error(`Document not found: ${parentDocId}`);
+    }
+
+    const targetBlock =
+      parentLoaded.blocks.find((b) => b.id === 'blk_00') ??
+      parentLoaded.blocks[0];
+
+    return this.branchDocumentFromChat(parentDocId, targetBlock.id, seedResult);
   }
 
   async acceptPendingEdit(editId: string): Promise<LoadedDocument> {

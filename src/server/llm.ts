@@ -7,6 +7,7 @@ import {
   SeedResultSchema,
   type ChatMessage,
   type IntegrateResult,
+  type LearnerProfile,
   type NotebookSettings,
   type PedagogicalProfileId,
   type ReasoningEffort,
@@ -18,6 +19,7 @@ export interface SeedGeneratorOptions {
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
   pedagogicalPrompt?: string;
+  learnerProfile?: LearnerProfile;
 }
 
 export type SeedGenerator = (
@@ -47,7 +49,34 @@ export type BranchGenerator = (input: {
   modelId: string;
   reasoningEffort?: ReasoningEffort;
   pedagogicalPrompt?: string;
+  learnerProfile?: LearnerProfile;
 }) => Promise<SeedResult>;
+
+export function formatLearnerProfilePrompt(profile?: LearnerProfile): string {
+  if (!profile || Object.keys(profile.topics).length === 0) {
+    return 'Learner Profile: No prior topics recorded yet. Assume prerequisites are unseen and ground concepts in plain-English intuition before formalism.';
+  }
+
+  const known = Object.entries(profile.topics)
+    .filter(([, status]) => status === 'known')
+    .map(([topic]) => topic);
+  const learning = Object.entries(profile.topics)
+    .filter(([, status]) => status === 'learning')
+    .map(([topic]) => topic);
+
+  const lines = ['Learner Profile (cross-workspace familiarity):'];
+  if (known.length > 0) {
+    lines.push(
+      `- Known topics (skip basic hand-holding and use standard formalism directly when referencing these): ${known.join(', ')}`
+    );
+  }
+  if (learning.length > 0) {
+    lines.push(
+      `- Currently learning (bridge intuition with formalism carefully): ${learning.join(', ')}`
+    );
+  }
+  return lines.join('\n');
+}
 
 export const DEFAULT_MODEL_ID = 'anthropic:claude-opus-4-6';
 
@@ -160,10 +189,11 @@ export const defaultSeedGenerator: SeedGenerator = async (
     system: [
       'You are an editorial technical notebook author writing for a curious learner who may not already know the underlying mathematics or specialist notation.',
       pedagogicalPrompt,
+      formatLearnerProfilePrompt(options?.learnerProfile),
       `Reasoning Effort: ${reasoningEffort}`,
-      'Generate a clear document title and 4 to 8 self-contained Markdown concept blocks exploring the user topic:',
-      '1. The VERY FIRST block (Block 0) MUST start with `## 0. Prerequisites & Notation`. It must list the mathematical and conceptual prerequisites needed to understand this topic, define every symbol or notation that will appear later in plain English, and give the intuitive picture before any equations are used.',
-      '2. Subsequent blocks (`## 1. ...`, `## 2. ...`) should build step-by-step from intuition to formalism, explaining what each equation physically or conceptually means in plain words rather than assuming prior familiarity.',
+      'Generate a clear document title, a structured `prerequisites` array of 2 to 5 concise prerequisite topic names, and 4 to 8 self-contained Markdown concept blocks exploring the user topic:',
+      '1. The VERY FIRST block (Block 0) MUST start with `## 0. Prerequisites & Notation`. It must list the mathematical and conceptual prerequisites needed to understand this topic (matching `prerequisites`), define every symbol or notation that will appear later in plain English, and give the intuitive picture before any equations are used.',
+      '2. Subsequent blocks (`## 1. ...`, `## 2. ...`) should build step-by-step from intuition to formalism, calibrating explanation depth to the Learner Profile.',
       '3. Only include a ```mermaid diagram in a block if a visual diagram genuinely clarifies a structure or flow; most blocks should be clean prose.',
     ].join('\n'),
     prompt: `Seed a technical notebook document for the topic: ${prompt}`,
@@ -239,6 +269,7 @@ export const defaultBranchGenerator: BranchGenerator = async ({
   modelId,
   reasoningEffort = 'high',
   pedagogicalPrompt,
+  learnerProfile,
 }): Promise<SeedResult> => {
   const model = resolveLanguageModel(modelId);
   const resolvedPedagogy = pedagogicalPrompt ?? resolvePedagogicalPrompt();
@@ -252,8 +283,9 @@ export const defaultBranchGenerator: BranchGenerator = async ({
     system: [
       'You are an editorial technical notebook author branching a dedicated deep-dive sub-document from an ephemeral Q&A chat on Target Block N.',
       resolvedPedagogy,
+      formatLearnerProfilePrompt(learnerProfile),
       `Reasoning Effort: ${reasoningEffort}`,
-      'Generate a clear, specific child document title and 4 to 8 self-contained Markdown concept blocks that thoroughly unpack the sub-topic explored in the chat:',
+      'Generate a clear, specific child document title, a structured `prerequisites` array of 2 to 5 concise prerequisite topic names, and 4 to 8 self-contained Markdown concept blocks that thoroughly unpack the sub-topic explored in the chat:',
       '1. The VERY FIRST block (Block 0) MUST start with `## 0. Prerequisites & Notation`. It must list the mathematical and conceptual prerequisites needed for this deep dive, define every symbol or notation in plain English, and connect to the parent document context.',
       '2. Subsequent blocks (`## 1. ...`, `## 2. ...`) should build step-by-step from intuition to full derivation or mechanism, preserving the insights from the Q&A transcript without referencing "the chat" or "the user".',
       '3. Only include a ```mermaid diagram in a block if a visual diagram genuinely clarifies a structure or flow; most blocks should be clean prose.',

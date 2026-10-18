@@ -172,3 +172,46 @@ export function extractToc(blocks: ConceptBlock[]): TocItem[] {
 
   return toc;
 }
+
+export function extractPrerequisitesFromBlock0(markdown: string): string[] {
+  const lines = markdown.replace(/\r\n/g, '\n').split('\n');
+  const topics: string[] = [];
+  const seen = new Set<string>();
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    const bulletMatch = line.match(/^[-*]\s+(.+)$/);
+    if (!bulletMatch) continue;
+
+    const content = bulletMatch[1]
+      .replace(/\[→\s*Deep dive:.*?\]\(.*?\)/g, '')
+      .trim();
+    if (!content) continue;
+
+    let candidate: string | null = null;
+    const boldMatch = content.match(/^\*\*([^*]+)\*\*(?:\s*[:—–-].*)?$/);
+    if (boldMatch) {
+      candidate = boldMatch[1].trim();
+    } else {
+      const colonMatch = content.match(/^([^:(\n—–-]+?)\s*[:—–-]\s+.+$/);
+      if (colonMatch) {
+        candidate = colonMatch[1].replace(/^[*`]+|[*`]+$/g, '').trim();
+      } else if (content.length <= 60) {
+        candidate = content.replace(/^[*`]+|[*`]+$/g, '').trim();
+      }
+    }
+
+    if (
+      candidate &&
+      candidate.length > 1 &&
+      !candidate.startsWith('$') &&
+      !candidate.startsWith('\\') &&
+      !seen.has(candidate)
+    ) {
+      seen.add(candidate);
+      topics.push(candidate);
+    }
+  }
+
+  return topics;
+}
