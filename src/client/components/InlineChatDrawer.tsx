@@ -194,6 +194,7 @@ export function InlineChatDrawer({
         <div style={{ display: 'flex', gap: '8px' }}>
           <button
             type="button"
+            aria-label={`Integrate chat into ${blockId}`}
             disabled={busy || messages.length === 0}
             onClick={() => void onIntegrate?.()}
             style={{
@@ -210,7 +211,7 @@ export function InlineChatDrawer({
               opacity: busy || messages.length === 0 ? 0.5 : 1,
             }}
           >
-            {isIntegrating ? 'Integrating into cells...' : 'Integrate'}
+            {isIntegrating ? 'Integrating...' : 'Integrate'}
           </button>
 
           <button

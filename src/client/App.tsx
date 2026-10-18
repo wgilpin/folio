@@ -7,6 +7,7 @@ import type {
   TocItem,
 } from '../shared/schema.js';
 import { ConceptBlockCard } from './components/ConceptBlockCard.js';
+import { GateBanner } from './components/GateBanner.js';
 import { SeedModal } from './components/SeedModal.js';
 import { SidebarTree } from './components/SidebarTree.js';
 
@@ -27,6 +28,7 @@ export function App(): React.ReactElement {
   const [activeChatBlockId, setActiveChatBlockId] = useState<string | null>(null);
   const [pendingEdits, setPendingEdits] = useState<PendingSuggestedEdit[]>([]);
   const [isSendingChat, setIsSendingChat] = useState<boolean>(false);
+  const [isIntegratingChat, setIsIntegratingChat] = useState<boolean>(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [modelId, setModelId] = useState<string>('anthropic:claude-opus-4-6');
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -218,6 +220,81 @@ export function App(): React.ReactElement {
     }
   };
 
+  const handleIntegrateChat = async (blockId: string) => {
+    setIsIntegratingChat(true);
+    setChatError(null);
+
+    try {
+      const res = await fetch(
+        `/api/blocks/${encodeURIComponent(blockId)}/integrate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ docId: document?.id ?? 'index' }),
+        }
+      );
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error ?? `Failed to integrate chat (${res.status})`);
+      }
+
+      applyDocResponse(data as DocApiResponse);
+      setActiveChat(null);
+      setActiveChatBlockId(null);
+    } catch (err) {
+      setChatError(
+        err instanceof Error ? err.message : 'Failed to integrate chat'
+      );
+    } finally {
+      setIsIntegratingChat(false);
+    }
+  };
+
+  const handleAcceptEdit = async (editId: string) => {
+    try {
+      const res = await fetch(
+        `/api/edits/${encodeURIComponent(editId)}/accept`,
+        {
+          method: 'POST',
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error ?? `Failed to accept edit (${res.status})`);
+      }
+      applyDocResponse(data as DocApiResponse);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRejectEdit = async (editId: string) => {
+    try {
+      const res = await fetch(
+        `/api/edits/${encodeURIComponent(editId)}/reject`,
+        {
+          method: 'POST',
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error ?? `Failed to reject edit (${res.status})`);
+      }
+      applyDocResponse(data as DocApiResponse);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleJumpToNextDiff = () => {
+    const firstEdit = pendingEdits[0];
+    if (firstEdit) {
+      const el = globalThis.document?.getElementById(`block-${firstEdit.blockId}`);
+      el?.scrollIntoView?.({ behavior: 'smooth' });
+    }
+  };
+
   return (
     <div
       style={{
@@ -289,6 +366,13 @@ export function App(): React.ReactElement {
                 </h1>
               </header>
 
+              {pendingEdits.length > 0 && (
+                <GateBanner
+                  pendingEdits={pendingEdits}
+                  onJumpToNextDiff={handleJumpToNextDiff}
+                />
+              )}
+
               <section aria-label="Concept Blocks">
                 {blocks.map((block, idx) => {
                   const isChatOpen = activeChatBlockId === block.id;
@@ -296,6 +380,8 @@ export function App(): React.ReactElement {
                     activeChat && activeChat.blockId === block.id
                       ? activeChat.messages
                       : [];
+                  const pendingEdit =
+                    pendingEdits.find((e) => e.blockId === block.id) ?? null;
 
                   return (
                     <ConceptBlockCard
@@ -305,11 +391,17 @@ export function App(): React.ReactElement {
                       isChatOpen={isChatOpen}
                       chatMessages={chatMessages}
                       isSendingChat={isChatOpen && isSendingChat}
+                      isIntegratingChat={isChatOpen && isIntegratingChat}
                       chatError={isChatOpen ? chatError : null}
+                      isChatLocked={pendingEdits.length > 0}
                       askCellDisabled={pendingEdits.length > 0}
+                      pendingEdit={pendingEdit}
                       onOpenChat={handleOpenChat}
                       onSendChatMessage={handleSendChatMessage}
+                      onIntegrateChat={handleIntegrateChat}
                       onDiscardChat={handleDiscardChat}
+                      onAcceptEdit={handleAcceptEdit}
+                      onRejectEdit={handleRejectEdit}
                       onUpdateMarkdown={handleUpdateBlock}
                       onSplitBlock={handleSplitBlock}
                       onMergeBlock={handleMergeBlock}
