@@ -10,7 +10,7 @@ Me. It is a local personal tool for learning rigorous technical subjects (such a
 
 ## The smallest thing that proves it
 
-A single-document workbench loop: seed a topic prompt into a sequence of concept blocks (prose and diagrams), open an ephemeral inline chat on one block to ask a follow-up question, and resolve it via **Integrate** (updating the target block, inserting new blocks below it, and accepting or rejecting suggested diff edits on adjacent blocks) or **Discard**, saving the result as a clean, standalone document on disk.
+A single-document workbench loop: seed a topic prompt into an immediate sequence of 4–8 concept blocks (prose and diagrams), open an ephemeral inline chat on one block to ask a follow-up question, and resolve it via **Integrate** (updating the target block, inserting new blocks below it, and accepting or rejecting suggested diff edits on adjacent blocks) or **Discard**, saving the result as a clean, standalone Markdown document on disk alongside direct manual inline editing (edit, split, merge, delete).
 
 If integrating a chat mangles the surrounding prose or takes more effort to review than manually editing a note beside a chat window, the idea fails.
 
@@ -23,6 +23,4 @@ If integrating a chat mangles the surrounding prose or takes more effort to revi
 
 ## Open questions
 
-- Should seeding a topic or branching a sub-document propose an outline for approval first, or generate concept blocks immediately?
-- Beyond LLM-driven chat integration, can the user directly edit text inline and manually split, merge, or reorder concept blocks?
-- When a cell chat branches into a child sub-document, how does the parent cell link to it, and does the chat transcript seed the child document automatically?
+None.
