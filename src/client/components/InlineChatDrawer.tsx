@@ -7,9 +7,11 @@ export interface InlineChatDrawerProps {
   messages: ChatMessage[];
   isSending?: boolean;
   isIntegrating?: boolean;
+  isBranching?: boolean;
   error?: string | null;
   onSendMessage: (message: string) => Promise<void> | void;
   onIntegrate?: () => Promise<void> | void;
+  onBranch?: () => Promise<void> | void;
   onDiscard: () => Promise<void> | void;
 }
 
@@ -18,17 +20,21 @@ export function InlineChatDrawer({
   messages,
   isSending = false,
   isIntegrating = false,
+  isBranching = false,
   error = null,
   onSendMessage,
   onIntegrate,
+  onBranch,
   onDiscard,
 }: InlineChatDrawerProps): React.ReactElement {
   const [input, setInput] = useState('');
 
+  const busy = isSending || isIntegrating || isBranching;
+
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     const trimmed = input.trim();
-    if (!trimmed || isSending || isIntegrating) {
+    if (!trimmed || busy) {
       return;
     }
     setInput('');
@@ -41,8 +47,6 @@ export function InlineChatDrawer({
       void handleSubmit();
     }
   };
-
-  const busy = isSending || isIntegrating;
 
   return (
     <section
@@ -216,21 +220,24 @@ export function InlineChatDrawer({
 
           <button
             type="button"
-            disabled
-            title="Available in Phase 03"
+            aria-label={`Branch chat from ${blockId} into sub-document`}
+            disabled={busy || messages.length === 0}
+            onClick={() => void onBranch?.()}
             style={{
               fontFamily: "'Inter', system-ui, sans-serif",
               fontSize: '12px',
+              fontWeight: 500,
               padding: '6px 12px',
               borderRadius: '6px',
-              border: '1px solid #E4DFD7',
-              backgroundColor: '#F3EFEA',
-              color: '#65635E',
-              cursor: 'not-allowed',
-              opacity: 0.6,
+              border: '1px solid #1D4ED8',
+              backgroundColor: '#FAF8F5',
+              color: '#1D4ED8',
+              cursor:
+                busy || messages.length === 0 ? 'not-allowed' : 'pointer',
+              opacity: busy || messages.length === 0 ? 0.5 : 1,
             }}
           >
-            Branch Doc
+            {isBranching ? 'Branching sub-document...' : 'Branch Doc'}
           </button>
         </div>
 

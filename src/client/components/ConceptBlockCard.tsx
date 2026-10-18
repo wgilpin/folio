@@ -4,10 +4,12 @@ import { marked } from 'marked';
 import type {
   ChatMessage,
   ConceptBlock,
+  DocumentNode,
   PendingSuggestedEdit,
 } from '../../shared/schema.js';
 import { InlineChatDrawer } from './InlineChatDrawer.js';
 import { MermaidDiagram } from './MermaidDiagram.js';
+import { SubDocLinkCard } from './SubDocLinkCard.js';
 
 export interface DiffLine {
   type: 'unchanged' | 'removed' | 'added';
@@ -111,13 +113,17 @@ export interface ConceptBlockCardProps {
   chatMessages?: ChatMessage[];
   isSendingChat?: boolean;
   isIntegratingChat?: boolean;
+  isBranchingChat?: boolean;
   chatError?: string | null;
   askCellDisabled?: boolean;
   isChatLocked?: boolean;
   pendingEdit?: PendingSuggestedEdit | null;
+  childDocuments?: DocumentNode[];
+  onSelectDocument?: (docId: string) => void;
   onOpenChat?: (blockId: string) => void;
   onSendChatMessage?: (blockId: string, message: string) => Promise<void> | void;
   onIntegrateChat?: (blockId: string) => Promise<void> | void;
+  onBranchChat?: (blockId: string) => Promise<void> | void;
   onDiscardChat?: (blockId: string) => Promise<void> | void;
   onUpdateMarkdown?: (blockId: string, markdown: string) => Promise<void> | void;
   onSplitBlock?: (blockId: string) => Promise<void> | void;
@@ -183,13 +189,17 @@ export function ConceptBlockCard({
   chatMessages = [],
   isSendingChat = false,
   isIntegratingChat = false,
+  isBranchingChat = false,
   chatError = null,
   askCellDisabled = false,
   isChatLocked = false,
   pendingEdit = null,
+  childDocuments = [],
+  onSelectDocument,
   onOpenChat,
   onSendChatMessage,
   onIntegrateChat,
+  onBranchChat,
   onDiscardChat,
   onUpdateMarkdown,
   onSplitBlock,
@@ -205,7 +215,14 @@ export function ConceptBlockCard({
     setDraftMarkdown(block.markdown);
   }, [block.markdown]);
 
-  const segments = splitMarkdownSegments(block.markdown);
+  const renderedMarkdown =
+    childDocuments.length > 0
+      ? block.markdown
+          .replace(/^\s*\[→\s*Deep dive:\s*[^\]]+\]\([^)]+\)\s*$/gm, '')
+          .trim()
+      : block.markdown;
+
+  const segments = splitMarkdownSegments(renderedMarkdown);
 
   const handleSave = async () => {
     if (onUpdateMarkdown) {
@@ -546,6 +563,13 @@ export function ConceptBlockCard({
               />
             );
           })}
+          {childDocuments.map((childDoc) => (
+            <SubDocLinkCard
+              key={childDoc.id}
+              childDoc={childDoc}
+              onSelectDocument={onSelectDocument}
+            />
+          ))}
         </div>
       )}
 
@@ -555,9 +579,11 @@ export function ConceptBlockCard({
           messages={chatMessages}
           isSending={isSendingChat}
           isIntegrating={isIntegratingChat}
+          isBranching={isBranchingChat}
           error={chatError}
           onSendMessage={(msg) => void onSendChatMessage?.(block.id, msg)}
           onIntegrate={() => void onIntegrateChat?.(block.id)}
+          onBranch={() => void onBranchChat?.(block.id)}
           onDiscard={() => void onDiscardChat?.(block.id)}
         />
       )}

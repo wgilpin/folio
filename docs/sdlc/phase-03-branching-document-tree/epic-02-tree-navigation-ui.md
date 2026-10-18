@@ -35,3 +35,43 @@ Inside `InlineChatDrawer`, the `Branch Doc` button (`aria-label="Branch chat fro
 ## Notes
 
 - Strip or hide raw `[→ Deep dive: ...](...md)` lines from the rendered Markdown prose inside `ConceptBlockCard` when `SubDocLinkCard` renders them as structured interactive cards, while keeping the raw Markdown link intact in `.md` on disk and in `Edit MD` mode.
+
+## Build note — 2026-10-18
+
+**Tasks done:**
+- Enabled the `Branch Doc` button (`aria-label="Branch chat from <blockId> into sub-document"`) inside `InlineChatDrawer.tsx` whenever `messages.length > 0` and no request is in flight, displaying `Branching sub-document...` while branching.
+- Created `SubDocLinkCard.tsx` (`data-testid="subdoc-link-card-<childDocId>"`, `aria-label="Open sub-document <Title>"`) to render interactive `→ Deep dive: <Title>` cards at the bottom of parent Concept Blocks while stripping duplicate raw deep-dive links from the rendered prose view in `ConceptBlockCard.tsx`.
+- Updated `SidebarTree.tsx` to render the hierarchical `Document Tree` starting from root documents and recursively indenting child documents with clickable `Open document <Title>` buttons.
+- Updated `App.tsx` to track `documents`, handle `POST /api/blocks/:id/branch` and `GET /api/doc?id=<docId>`, pass `childDocuments` to `ConceptBlockCard`, and render the `Document Breadcrumbs` bar (`data-testid="document-breadcrumbs"`) at the top of the Workbench.
+
+**Tests added:**
+- `src/client/__tests__/BranchTree.test.tsx` — `branches active cell chat via Branch Doc button into child document and renders SubDocLinkCard on parent block` (covers AC-1, AC-2)
+- `src/client/__tests__/BranchTree.test.tsx` — `navigates between root and child documents via breadcrumbs, SidebarTree nodes, and SubDocLinkCard` (covers AC-2, AC-3)
+
+**Suite result:**
+- 10 test files passed, 23 tests passed (`npm test`).
+
+**Deviations from plan:**
+- None.
+
+---
+
+## Review — 2026-10-18
+
+**Verdict:** pass with follow-ups
+
+### Pass 1 — Conformance
+
+| Criterion | Met | Test |
+|---|---|---|
+| AC-1 | yes | `src/client/__tests__/BranchTree.test.tsx` — `branches active cell chat via Branch Doc button into child document and renders SubDocLinkCard on parent block` |
+| AC-2 | yes | `src/client/__tests__/BranchTree.test.tsx` — `branches active cell chat via Branch Doc button into child document and renders SubDocLinkCard on parent block`, `navigates between root and child documents via breadcrumbs, SidebarTree nodes, and SubDocLinkCard` |
+| AC-3 | yes | `src/client/__tests__/BranchTree.test.tsx` — `navigates between root and child documents via breadcrumbs, SidebarTree nodes, and SubDocLinkCard` |
+
+### Pass 2 — Drift
+
+- None
+
+### Pass 3 — Correctness
+
+- `src/client/App.tsx:185` — `handleDeleteBlock` and `handleDiscardChat` omit `?docId=<document.id>` query parameter when operating inside a branched child document (`follow-up`).
