@@ -54,10 +54,32 @@ export const EphemeralChatThreadSchema = z.object({
 
 export type EphemeralChatThread = z.infer<typeof EphemeralChatThreadSchema>;
 
+export const ReasoningEffortSchema = z.enum(['low', 'medium', 'high']);
+
+export type ReasoningEffort = z.infer<typeof ReasoningEffortSchema>;
+
+export const PedagogicalProfileIdSchema = z.enum([
+  'intuitive-physical',
+  'rigorous-derivation',
+  'custom',
+]);
+
+export type PedagogicalProfileId = z.infer<typeof PedagogicalProfileIdSchema>;
+
+export const NotebookSettingsSchema = z.object({
+  modelId: z.string().default('anthropic:claude-opus-4-6'),
+  reasoningEffort: ReasoningEffortSchema.default('high'),
+  activeProfileId: PedagogicalProfileIdSchema.default('intuitive-physical'),
+  customSystemPrompt: z.string().default(''),
+});
+
+export type NotebookSettings = z.infer<typeof NotebookSettingsSchema>;
+
 export const NotebookStateSchema = z.object({
   documents: z.record(z.string(), DocumentNodeSchema),
   pendingEdits: z.array(PendingSuggestedEditSchema).default([]),
   activeChat: EphemeralChatThreadSchema.nullable().optional(),
+  settings: NotebookSettingsSchema.optional(),
 });
 
 export type NotebookState = z.infer<typeof NotebookStateSchema>;

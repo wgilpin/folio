@@ -30,6 +30,14 @@ describe('Document API routes', () => {
       blocks: [],
       toc: [],
       modelId: 'anthropic:claude-opus-4-6',
+      settings: {
+        modelId: 'anthropic:claude-opus-4-6',
+        reasoningEffort: 'high',
+        activeProfileId: 'intuitive-physical',
+        customSystemPrompt: '',
+      },
+      workspaceDir: tempDir,
+      workspaces: [tempDir],
     });
   });
 
@@ -57,7 +65,13 @@ describe('Document API routes', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(seedGenerator).toHaveBeenCalledWith('Hamiltonian Mechanics');
+    expect(seedGenerator).toHaveBeenCalledWith(
+      'Hamiltonian Mechanics',
+      expect.objectContaining({
+        modelId: 'anthropic:claude-opus-4-6',
+        reasoningEffort: 'high',
+      })
+    );
 
     const body = await res.json();
     expect(body.document).toEqual({

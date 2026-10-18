@@ -1,7 +1,10 @@
+import * as fs from 'node:fs/promises';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import {
   IntegrateResultSchema,
+  PedagogicalProfileIdSchema,
+  ReasoningEffortSchema,
   SeedResultSchema,
   type ChatMessage,
 } from '../shared/schema.js';
@@ -12,6 +15,7 @@ import {
   defaultIntegrateGenerator,
   defaultSeedGenerator,
   getActiveModelId,
+  resolvePedagogicalPrompt,
   type BranchGenerator,
   type CellChatGenerator,
   type IntegrateGenerator,
@@ -60,9 +64,21 @@ const BranchRequestSchema = z.object({
   docId: z.string().optional(),
 });
 
+const UpdateSettingsRequestSchema = z.object({
+  modelId: z.string().trim().min(1).optional(),
+  reasoningEffort: ReasoningEffortSchema.optional(),
+  activeProfileId: PedagogicalProfileIdSchema.optional(),
+  customSystemPrompt: z.string().optional(),
+});
+
+const SwitchWorkspaceRequestSchema = z.object({
+  workspaceDir: z.string().trim().min(1, 'Workspace directory is required'),
+});
+
 export function createApp(options: CreateAppOptions): Hono {
   const app = new Hono();
-  const store = new WorkspaceStore(options.workspaceDir);
+  let store = new WorkspaceStore(options.workspaceDir);
+  const knownWorkspaces = new Set<string>([options.workspaceDir]);
   const seedGenerator = options.seedGenerator ?? defaultSeedGenerator;
   const cellChatGenerator =
     options.cellChatGenerator ?? defaultCellChatGenerator;
@@ -70,17 +86,22 @@ export function createApp(options: CreateAppOptions): Hono {
     options.integrateGenerator ?? defaultIntegrateGenerator;
   const branchGenerator = options.branchGenerator ?? defaultBranchGenerator;
 
+  const getDefaultModelId = () => options.modelId ?? getActiveModelId();
+
   app.get('/api/doc', async (c) => {
     const docId = c.req.query('id') ?? 'index';
     const loaded = await store.loadDocument(docId);
-    const modelId = options.modelId ?? getActiveModelId();
+    const settings = await store.getSettings(getDefaultModelId());
 
     if (!loaded.document) {
       return c.json({
         document: null,
         blocks: [],
         toc: [],
-        modelId,
+        settings,
+        workspaceDir: store.workspaceDir,
+        workspaces: Array.from(knownWorkspaces),
+        modelId: settings.modelId,
       });
     }
 
@@ -91,7 +112,75 @@ export function createApp(options: CreateAppOptions): Hono {
       documents: loaded.documents,
       activeChat: loaded.activeChat,
       pendingEdits: loaded.pendingEdits,
-      modelId,
+      settings,
+      workspaceDir: store.workspaceDir,
+      workspaces: Array.from(knownWorkspaces),
+      modelId: settings.modelId,
+    });
+  });
+
+  app.put('/api/settings', async (c) => {
+    let rawBody: unknown;
+    try {
+      rawBody = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON request body' }, 400);
+    }
+
+    const parsedReq = UpdateSettingsRequestSchema.safeParse(rawBody);
+    if (!parsedReq.success) {
+      return c.json({ error: 'Invalid settings payload' }, 400);
+    }
+
+    const settings = await store.updateSettings(
+      parsedReq.data,
+      getDefaultModelId()
+    );
+    return c.json({
+      settings,
+      modelId: settings.modelId,
+    });
+  });
+
+  app.get('/api/workspaces', async (c) => {
+    return c.json({
+      workspaceDir: store.workspaceDir,
+      workspaces: Array.from(knownWorkspaces),
+    });
+  });
+
+  app.post('/api/workspaces/switch', async (c) => {
+    let rawBody: unknown;
+    try {
+      rawBody = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON request body' }, 400);
+    }
+
+    const parsedReq = SwitchWorkspaceRequestSchema.safeParse(rawBody);
+    if (!parsedReq.success) {
+      return c.json({ error: 'Workspace directory is required' }, 400);
+    }
+
+    const targetDir = parsedReq.data.workspaceDir;
+    await fs.mkdir(targetDir, { recursive: true });
+    store = new WorkspaceStore(targetDir);
+    knownWorkspaces.add(targetDir);
+
+    const loaded = await store.loadDocument('index');
+    const settings = await store.getSettings(getDefaultModelId());
+
+    return c.json({
+      document: loaded.document,
+      blocks: loaded.blocks,
+      toc: loaded.toc,
+      documents: loaded.documents,
+      activeChat: loaded.activeChat,
+      pendingEdits: loaded.pendingEdits,
+      settings,
+      workspaceDir: store.workspaceDir,
+      workspaces: Array.from(knownWorkspaces),
+      modelId: settings.modelId,
     });
   });
 
@@ -109,8 +198,13 @@ export function createApp(options: CreateAppOptions): Hono {
     }
 
     try {
+      const settings = await store.getSettings(getDefaultModelId());
       const seedResult = SeedResultSchema.parse(
-        await seedGenerator(parsedReq.data.prompt)
+        await seedGenerator(parsedReq.data.prompt, {
+          modelId: settings.modelId,
+          reasoningEffort: settings.reasoningEffort,
+          pedagogicalPrompt: resolvePedagogicalPrompt(settings),
+        })
       );
       const blocks = seedResult.blocks.map((markdown, index) => ({
         id:
@@ -124,7 +218,6 @@ export function createApp(options: CreateAppOptions): Hono {
         id: 'index',
         filename: 'index.md',
       });
-      const modelId = options.modelId ?? getActiveModelId();
 
       return c.json({
         document: saved.document,
@@ -133,7 +226,10 @@ export function createApp(options: CreateAppOptions): Hono {
         documents: saved.documents,
         activeChat: saved.activeChat,
         pendingEdits: saved.pendingEdits,
-        modelId,
+        settings,
+        workspaceDir: store.workspaceDir,
+        workspaces: Array.from(knownWorkspaces),
+        modelId: settings.modelId,
       });
     } catch (err) {
       const message =
@@ -162,7 +258,7 @@ export function createApp(options: CreateAppOptions): Hono {
         parsedReq.data.markdown,
         parsedReq.data.docId ?? 'index'
       );
-      const modelId = options.modelId ?? getActiveModelId();
+      const settings = await store.getSettings(getDefaultModelId());
 
       return c.json({
         document: saved.document,
@@ -171,7 +267,10 @@ export function createApp(options: CreateAppOptions): Hono {
         documents: saved.documents,
         activeChat: saved.activeChat,
         pendingEdits: saved.pendingEdits,
-        modelId,
+        settings,
+        workspaceDir: store.workspaceDir,
+        workspaces: Array.from(knownWorkspaces),
+        modelId: settings.modelId,
       });
     } catch (err) {
       const message =
@@ -203,7 +302,7 @@ export function createApp(options: CreateAppOptions): Hono {
         offset: parsedReq.data.offset,
         docId: parsedReq.data.docId ?? 'index',
       });
-      const modelId = options.modelId ?? getActiveModelId();
+      const settings = await store.getSettings(getDefaultModelId());
 
       return c.json({
         document: saved.document,
@@ -212,7 +311,10 @@ export function createApp(options: CreateAppOptions): Hono {
         documents: saved.documents,
         activeChat: saved.activeChat,
         pendingEdits: saved.pendingEdits,
-        modelId,
+        settings,
+        workspaceDir: store.workspaceDir,
+        workspaces: Array.from(knownWorkspaces),
+        modelId: settings.modelId,
       });
     } catch (err) {
       const message =
@@ -244,7 +346,7 @@ export function createApp(options: CreateAppOptions): Hono {
         blockId,
         parsedReq.data.docId ?? 'index'
       );
-      const modelId = options.modelId ?? getActiveModelId();
+      const settings = await store.getSettings(getDefaultModelId());
 
       return c.json({
         document: saved.document,
@@ -253,7 +355,10 @@ export function createApp(options: CreateAppOptions): Hono {
         documents: saved.documents,
         activeChat: saved.activeChat,
         pendingEdits: saved.pendingEdits,
-        modelId,
+        settings,
+        workspaceDir: store.workspaceDir,
+        workspaces: Array.from(knownWorkspaces),
+        modelId: settings.modelId,
       });
     } catch (err) {
       const message =
@@ -269,7 +374,7 @@ export function createApp(options: CreateAppOptions): Hono {
 
     try {
       const saved = await store.deleteBlock(blockId, docId);
-      const modelId = options.modelId ?? getActiveModelId();
+      const settings = await store.getSettings(getDefaultModelId());
 
       return c.json({
         document: saved.document,
@@ -278,7 +383,10 @@ export function createApp(options: CreateAppOptions): Hono {
         documents: saved.documents,
         activeChat: saved.activeChat,
         pendingEdits: saved.pendingEdits,
-        modelId,
+        settings,
+        workspaceDir: store.workspaceDir,
+        workspaces: Array.from(knownWorkspaces),
+        modelId: settings.modelId,
       });
     } catch (err) {
       const message =
@@ -320,18 +428,20 @@ export function createApp(options: CreateAppOptions): Hono {
         ...priorMessages,
         { role: 'user', content: parsedReq.data.message },
       ];
-      const modelId = options.modelId ?? getActiveModelId();
+      const settings = await store.getSettings(getDefaultModelId());
 
       const assistantReply = await cellChatGenerator({
         context,
         messages: messagesForGenerator,
-        modelId,
+        modelId: settings.modelId,
+        reasoningEffort: settings.reasoningEffort,
+        pedagogicalPrompt: resolvePedagogicalPrompt(settings),
       });
 
       const activeChat = await store.appendChatMessage(
         docId,
         blockId,
-        modelId,
+        settings.modelId,
         parsedReq.data.message,
         assistantReply
       );
@@ -390,13 +500,15 @@ export function createApp(options: CreateAppOptions): Hono {
 
     try {
       const context = await buildBoundedCellContext(store, docId, blockId);
-      const modelId = options.modelId ?? getActiveModelId();
+      const settings = await store.getSettings(getDefaultModelId());
 
       const integrateResult = IntegrateResultSchema.parse(
         await integrateGenerator({
           context,
           messages: activeChat.messages,
-          modelId,
+          modelId: settings.modelId,
+          reasoningEffort: settings.reasoningEffort,
+          pedagogicalPrompt: resolvePedagogicalPrompt(settings),
         })
       );
 
@@ -413,7 +525,10 @@ export function createApp(options: CreateAppOptions): Hono {
         documents: saved.documents,
         activeChat: saved.activeChat,
         pendingEdits: saved.pendingEdits,
-        modelId,
+        settings,
+        workspaceDir: store.workspaceDir,
+        workspaces: Array.from(knownWorkspaces),
+        modelId: settings.modelId,
       });
     } catch (err) {
       const message =
@@ -460,13 +575,15 @@ export function createApp(options: CreateAppOptions): Hono {
 
     try {
       const context = await buildBoundedCellContext(store, docId, blockId);
-      const modelId = options.modelId ?? getActiveModelId();
+      const settings = await store.getSettings(getDefaultModelId());
 
       const branchResult = SeedResultSchema.parse(
         await branchGenerator({
           context,
           messages: activeChat.messages,
-          modelId,
+          modelId: settings.modelId,
+          reasoningEffort: settings.reasoningEffort,
+          pedagogicalPrompt: resolvePedagogicalPrompt(settings),
         })
       );
 
@@ -483,7 +600,10 @@ export function createApp(options: CreateAppOptions): Hono {
         documents: created.documents,
         activeChat: created.activeChat,
         pendingEdits: created.pendingEdits,
-        modelId,
+        settings,
+        workspaceDir: store.workspaceDir,
+        workspaces: Array.from(knownWorkspaces),
+        modelId: settings.modelId,
       });
     } catch (err) {
       const message =
@@ -498,7 +618,7 @@ export function createApp(options: CreateAppOptions): Hono {
 
     try {
       const saved = await store.acceptPendingEdit(editId);
-      const modelId = options.modelId ?? getActiveModelId();
+      const settings = await store.getSettings(getDefaultModelId());
 
       return c.json({
         document: saved.document,
@@ -507,7 +627,10 @@ export function createApp(options: CreateAppOptions): Hono {
         documents: saved.documents,
         activeChat: saved.activeChat,
         pendingEdits: saved.pendingEdits,
-        modelId,
+        settings,
+        workspaceDir: store.workspaceDir,
+        workspaces: Array.from(knownWorkspaces),
+        modelId: settings.modelId,
       });
     } catch (err) {
       const message =
@@ -522,7 +645,7 @@ export function createApp(options: CreateAppOptions): Hono {
 
     try {
       const saved = await store.rejectPendingEdit(editId);
-      const modelId = options.modelId ?? getActiveModelId();
+      const settings = await store.getSettings(getDefaultModelId());
 
       return c.json({
         document: saved.document,
@@ -531,7 +654,10 @@ export function createApp(options: CreateAppOptions): Hono {
         documents: saved.documents,
         activeChat: saved.activeChat,
         pendingEdits: saved.pendingEdits,
-        modelId,
+        settings,
+        workspaceDir: store.workspaceDir,
+        workspaces: Array.from(knownWorkspaces),
+        modelId: settings.modelId,
       });
     } catch (err) {
       const message =
