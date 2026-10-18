@@ -1,9 +1,59 @@
 import React, { useEffect, useState } from 'react';
 import katex from 'katex';
 import { marked } from 'marked';
-import type { ChatMessage, ConceptBlock } from '../../shared/schema.js';
+import type {
+  ChatMessage,
+  ConceptBlock,
+  PendingSuggestedEdit,
+} from '../../shared/schema.js';
 import { InlineChatDrawer } from './InlineChatDrawer.js';
 import { MermaidDiagram } from './MermaidDiagram.js';
+
+export interface DiffLine {
+  type: 'unchanged' | 'removed' | 'added';
+  text: string;
+}
+
+export function computeLineDiff(original: string, proposed: string): DiffLine[] {
+  const orig = original.split('\n');
+  const prop = proposed.split('\n');
+  const m = orig.length;
+  const n = prop.length;
+
+  const dp: number[][] = Array.from({ length: m + 1 }, () =>
+    Array(n + 1).fill(0)
+  );
+
+  for (let i = 0; i < m; i++) {
+    for (let j = 0; j < n; j++) {
+      if (orig[i] === prop[j]) {
+        dp[i + 1][j + 1] = dp[i][j] + 1;
+      } else {
+        dp[i + 1][j + 1] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+  }
+
+  const diff: DiffLine[] = [];
+  let i = m;
+  let j = n;
+
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && orig[i - 1] === prop[j - 1]) {
+      diff.unshift({ type: 'unchanged', text: orig[i - 1] });
+      i--;
+      j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      diff.unshift({ type: 'added', text: prop[j - 1] });
+      j--;
+    } else if (i > 0 && (j === 0 || dp[i][j - 1] < dp[i - 1][j])) {
+      diff.unshift({ type: 'removed', text: orig[i - 1] });
+      i--;
+    }
+  }
+
+  return diff;
+}
 
 export function renderMarkdownWithMath(markdown: string): string {
   const mathTokens: string[] = [];
@@ -63,6 +113,8 @@ export interface ConceptBlockCardProps {
   isIntegratingChat?: boolean;
   chatError?: string | null;
   askCellDisabled?: boolean;
+  isChatLocked?: boolean;
+  pendingEdit?: PendingSuggestedEdit | null;
   onOpenChat?: (blockId: string) => void;
   onSendChatMessage?: (blockId: string, message: string) => Promise<void> | void;
   onIntegrateChat?: (blockId: string) => Promise<void> | void;
@@ -71,6 +123,8 @@ export interface ConceptBlockCardProps {
   onSplitBlock?: (blockId: string) => Promise<void> | void;
   onMergeBlock?: (blockId: string) => Promise<void> | void;
   onDeleteBlock?: (blockId: string) => Promise<void> | void;
+  onAcceptEdit?: (editId: string) => Promise<void> | void;
+  onRejectEdit?: (editId: string) => Promise<void> | void;
 }
 
 interface MarkdownSegment {
@@ -131,6 +185,8 @@ export function ConceptBlockCard({
   isIntegratingChat = false,
   chatError = null,
   askCellDisabled = false,
+  isChatLocked = false,
+  pendingEdit = null,
   onOpenChat,
   onSendChatMessage,
   onIntegrateChat,
@@ -139,6 +195,8 @@ export function ConceptBlockCard({
   onSplitBlock,
   onMergeBlock,
   onDeleteBlock,
+  onAcceptEdit,
+  onRejectEdit,
 }: ConceptBlockCardProps): React.ReactElement {
   const [isEditingRaw, setIsEditingRaw] = useState(false);
   const [draftMarkdown, setDraftMarkdown] = useState(block.markdown);
@@ -171,7 +229,15 @@ export function ConceptBlockCard({
     }
   };
 
+  const isLocked = isChatLocked || askCellDisabled;
+  const isDiffPending = Boolean(pendingEdit);
   const isHighlighted = isEditingRaw || isChatOpen;
+
+  const cardBorder = isDiffPending
+    ? '2px solid #F59E0B'
+    : isHighlighted
+    ? '2px solid #1D4ED8'
+    : '1px solid #E4DFD7';
 
   return (
     <article
@@ -179,13 +245,14 @@ export function ConceptBlockCard({
       data-testid={`concept-block-${block.id}`}
       style={{
         backgroundColor: '#FFFFFF',
-        border: isHighlighted ? '2px solid #1D4ED8' : '1px solid #E4DFD7',
+        border: cardBorder,
         borderRadius: '8px',
         padding: '24px',
         marginBottom: '16px',
-        boxShadow: isHighlighted
-          ? '0 2px 8px rgba(24, 24, 27, 0.06)'
-          : 'none',
+        boxShadow:
+          isDiffPending || isHighlighted
+            ? '0 2px 8px rgba(24, 24, 27, 0.06)'
+            : 'none',
       }}
     >
       <header
@@ -213,9 +280,9 @@ export function ConceptBlockCard({
           <button
             type="button"
             aria-label={`Ask cell ${block.id}`}
-            disabled={askCellDisabled}
+            disabled={isLocked}
             title={
-              askCellDisabled
+              isLocked
                 ? 'Resolve pending suggested edits first'
                 : undefined
             }
@@ -226,8 +293,8 @@ export function ConceptBlockCard({
               color: isChatOpen ? '#FFFFFF' : '#1D4ED8',
               borderColor: '#1D4ED8',
               fontWeight: 500,
-              opacity: askCellDisabled ? 0.5 : 1,
-              cursor: askCellDisabled ? 'not-allowed' : 'pointer',
+              opacity: isLocked ? 0.5 : 1,
+              cursor: isLocked ? 'not-allowed' : 'pointer',
             }}
           >
             Ask Cell
@@ -336,6 +403,123 @@ export function ConceptBlockCard({
               }}
             >
               Save
+            </button>
+          </div>
+        </div>
+      ) : pendingEdit ? (
+        <div style={{ marginTop: '8px' }}>
+          <div
+            role="note"
+            data-testid={`pending-edit-reason-${block.id}`}
+            style={{
+              backgroundColor: '#FEF3C7',
+              border: '1px solid #F59E0B',
+              borderRadius: '6px',
+              padding: '10px 14px',
+              marginBottom: '14px',
+              color: '#B45309',
+              fontFamily: "'Inter', system-ui, sans-serif",
+              fontSize: '13px',
+              lineHeight: 1.5,
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>Suggested Edit: </span>
+            {pendingEdit.reason}
+          </div>
+
+          <div
+            data-testid={`diff-view-${block.id}`}
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: '13px',
+              lineHeight: 1.6,
+              backgroundColor: '#FAF8F5',
+              border: '1px solid #E4DFD7',
+              borderRadius: '6px',
+              padding: '12px',
+              overflowX: 'auto',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+          >
+            {computeLineDiff(
+              pendingEdit.originalMarkdown,
+              pendingEdit.proposedMarkdown
+            ).map((line, idx) => {
+              let bg = 'transparent';
+              let color = '#65635E';
+              let prefix = '  ';
+
+              if (line.type === 'removed') {
+                bg = '#FEE2E2';
+                color = '#B91C1C';
+                prefix = '- ';
+              } else if (line.type === 'added') {
+                bg = '#DCFCE7';
+                color = '#15803D';
+                prefix = '+ ';
+              }
+
+              return (
+                <div
+                  key={idx}
+                  data-testid={`diff-${line.type}-line`}
+                  style={{
+                    backgroundColor: bg,
+                    color,
+                    padding: '2px 6px',
+                    borderRadius: '3px',
+                  }}
+                >
+                  {prefix}{line.text}
+                </div>
+              );
+            })}
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              gap: '8px',
+              justifyContent: 'flex-end',
+              marginTop: '14px',
+            }}
+          >
+            <button
+              type="button"
+              aria-label={`Reject suggested edit on ${block.id}`}
+              onClick={() => void onRejectEdit?.(pendingEdit.id)}
+              style={{
+                fontFamily: "'Inter', system-ui, sans-serif",
+                fontSize: '13px',
+                fontWeight: 500,
+                padding: '6px 14px',
+                borderRadius: '6px',
+                border: '1px solid #E4DFD7',
+                backgroundColor: '#FAF8F5',
+                color: '#B91C1C',
+                cursor: 'pointer',
+              }}
+            >
+              Reject Edit
+            </button>
+            <button
+              type="button"
+              aria-label={`Accept suggested edit on ${block.id}`}
+              onClick={() => void onAcceptEdit?.(pendingEdit.id)}
+              style={{
+                fontFamily: "'Inter', system-ui, sans-serif",
+                fontSize: '13px',
+                fontWeight: 500,
+                padding: '6px 14px',
+                borderRadius: '6px',
+                border: '1px solid #15803D',
+                backgroundColor: '#15803D',
+                color: '#FFFFFF',
+                cursor: 'pointer',
+              }}
+            >
+              Accept Edit
             </button>
           </div>
         </div>

@@ -29,7 +29,7 @@ Updated: 2026-10-18
 - [ ] 02-inline-chat-integrate — in progress
   - [x] epic-01-bounded-chat-discard — merged 2026-10-18
   - [x] epic-02-integrate-and-diff-gate — merged 2026-10-18
-  - [ ] epic-03-diff-gate-ui — pending
+  - [ ] epic-03-diff-gate-ui — reviewed — pass with follow-ups
 - [ ] 03-branching-document-tree — pending
 - [ ] 04-byom-pedagogical-controls — pending
 - [ ] 05-learner-profile-prerequisites — pending

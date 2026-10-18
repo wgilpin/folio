@@ -33,3 +33,60 @@ When the user clicks `Integrate` inside `InlineChatDrawer`, the UI calls `POST /
 ## Notes
 
 - Follow the exact colour and typography tokens in [design.md](../../design.md): warning/diff `#B45309` text on `#FEF3C7` surface with `#F59E0B` border, removal `#B91C1C` on `#FEE2E2`, addition `#15803D` on `#DCFCE7`, and `aria-label="Accept suggested edit on <blockId>"` / `aria-label="Reject suggested edit on <blockId>"`.
+
+## Build note — 2026-10-18
+
+**Result:** green
+
+### Tasks done
+
+- Implemented `GateBanner` (`src/client/components/GateBanner.tsx`) with sticky positioning at the top of the Workbench, role `status`, test ID `gate-banner`, pending edit count label (`1 pending suggested edit` / `N pending suggested edits`), and `Jump to next diff` action scrolling to the first pending diff block, styled with `#FEF3C7` surface, `#F59E0B` border, and `#B45309` warning text.
+- Enhanced `InlineChatDrawer` (`src/client/components/InlineChatDrawer.tsx`) with `aria-label="Integrate chat into <blockId>"` and in-flight status label `Integrating...`.
+- Implemented `pending-diff` variant and LCS line-level diffing in `ConceptBlockCard` (`src/client/components/ConceptBlockCard.tsx`):
+  - Added `computeLineDiff` computing additions, removals, and unchanged lines.
+  - Rendered `2px solid #F59E0B` amber border when a block has a pending edit.
+  - Displayed the LLM reason banner with `#FEF3C7` / `#F59E0B` / `#B45309`.
+  - Displayed line-level diff with `-` removals in `#FEE2E2` / `#B91C1C` and `+` additions in `#DCFCE7` / `#15803D`.
+  - Added `Accept Edit` (`aria-label="Accept suggested edit on <blockId>"`) and `Reject Edit` (`aria-label="Reject suggested edit on <blockId>"`) actions.
+  - Enforced `isChatLocked` disabling `Ask Cell` with tooltip `Resolve pending suggested edits first`.
+- Wired integration, acceptance, and rejection in `App.tsx` (`src/client/App.tsx`):
+  - `handleIntegrateChat`: calls `POST /api/blocks/:id/integrate`, updates state with `DocApiResponse`, and closes chat drawer.
+  - `handleAcceptEdit`: calls `POST /api/edits/:editId/accept` and updates state.
+  - `handleRejectEdit`: calls `POST /api/edits/:editId/reject` and updates state.
+  - Rendered `GateBanner` above Concept Blocks when `pendingEdits.length > 0`.
+- Added `vite-env.d.ts` for Vite client CSS side-effect import typing.
+
+### Tests added
+
+- `src/client/__tests__/InlineChat.test.tsx` — `integrates chat, renders GateBanner and pending-diff card on adjacent cell, locks Ask Cell buttons, and unlocks after Accept/Reject` (covers AC-1, AC-2, and AC-3)
+
+### Suite result
+
+`npm test` — `Test Files 8 passed (8), Tests 18 passed (18)`
+
+### Deviations from the plan
+
+None.
+
+---
+
+## Review — 2026-10-18
+
+**Verdict:** pass with follow-ups
+
+### Pass 1 — Conformance
+
+| Criterion | Met | Test |
+|---|---|---|
+| AC-1 | yes | `src/client/__tests__/InlineChat.test.tsx` — `integrates chat, renders GateBanner and pending-diff card on adjacent cell, locks Ask Cell buttons, and unlocks after Accept/Reject` |
+| AC-2 | yes | `src/client/__tests__/InlineChat.test.tsx` — `integrates chat, renders GateBanner and pending-diff card on adjacent cell, locks Ask Cell buttons, and unlocks after Accept/Reject` |
+| AC-3 | yes | `src/client/__tests__/InlineChat.test.tsx` — `integrates chat, renders GateBanner and pending-diff card on adjacent cell, locks Ask Cell buttons, and unlocks after Accept/Reject` |
+
+### Pass 2 — Drift
+
+- None
+
+### Pass 3 — Correctness
+
+- `src/client/App.tsx:267` — `handleAcceptEdit` and `handleRejectEdit` log failures to `console.error` rather than displaying an inline error alert on the pending-diff card (`follow-up`).
+
