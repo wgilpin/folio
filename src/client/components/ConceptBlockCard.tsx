@@ -5,11 +5,25 @@ import type {
   ChatMessage,
   ConceptBlock,
   DocumentNode,
+  LearnerProfile,
   PendingSuggestedEdit,
+  TopicFamiliarity,
 } from '../../shared/schema.js';
 import { InlineChatDrawer } from './InlineChatDrawer.js';
 import { MermaidDiagram } from './MermaidDiagram.js';
 import { SubDocLinkCard } from './SubDocLinkCard.js';
+
+export function extractPrerequisiteTopicsFromMarkdown(markdown: string): string[] {
+  const topics: string[] = [];
+  for (const line of markdown.split('\n')) {
+    const match = line.match(/^\s*[-*]\s+(?:\*\*([^*]+)\*\*|([^:\n]+?))\s*(?::|$)/);
+    const candidate = (match?.[1] ?? match?.[2] ?? '').trim();
+    if (candidate && !topics.includes(candidate)) {
+      topics.push(candidate);
+    }
+  }
+  return topics;
+}
 
 export interface DiffLine {
   type: 'unchanged' | 'removed' | 'added';
@@ -119,7 +133,15 @@ export interface ConceptBlockCardProps {
   isChatLocked?: boolean;
   pendingEdit?: PendingSuggestedEdit | null;
   childDocuments?: DocumentNode[];
+  prerequisites?: string[];
+  learnerProfile?: LearnerProfile;
+  seedingPrerequisiteTopic?: string | null;
   onSelectDocument?: (docId: string) => void;
+  onTogglePrerequisiteKnown?: (
+    topic: string,
+    nextStatus: TopicFamiliarity
+  ) => Promise<void> | void;
+  onSeedPrerequisite?: (topic: string) => Promise<void> | void;
   onOpenChat?: (blockId: string) => void;
   onSendChatMessage?: (blockId: string, message: string) => Promise<void> | void;
   onIntegrateChat?: (blockId: string) => Promise<void> | void;
@@ -195,7 +217,12 @@ export function ConceptBlockCard({
   isChatLocked = false,
   pendingEdit = null,
   childDocuments = [],
+  prerequisites,
+  learnerProfile,
+  seedingPrerequisiteTopic = null,
   onSelectDocument,
+  onTogglePrerequisiteKnown,
+  onSeedPrerequisite,
   onOpenChat,
   onSendChatMessage,
   onIntegrateChat,
@@ -223,6 +250,12 @@ export function ConceptBlockCard({
       : block.markdown;
 
   const segments = splitMarkdownSegments(renderedMarkdown);
+  const resolvedPrerequisites =
+    block.id === 'blk_00'
+      ? prerequisites && prerequisites.length > 0
+        ? prerequisites
+        : extractPrerequisiteTopicsFromMarkdown(block.markdown)
+      : [];
 
   const handleSave = async () => {
     if (onUpdateMarkdown) {
@@ -563,6 +596,116 @@ export function ConceptBlockCard({
               />
             );
           })}
+          {block.id === 'blk_00' && resolvedPrerequisites.length > 0 && (
+            <div
+              data-testid="prerequisite-chips-bar"
+              aria-label="Prerequisite Chips"
+              style={{
+                marginTop: '16px',
+                paddingTop: '12px',
+                borderTop: '1px solid #E4DFD7',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                fontFamily: "'Inter', system-ui, sans-serif",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  color: '#65635E',
+                }}
+              >
+                Interactive Prerequisites
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {resolvedPrerequisites.map((topic) => {
+                  const status: TopicFamiliarity =
+                    learnerProfile?.topics?.[topic] ?? 'unseen';
+                  const isKnown = status === 'known';
+                  return (
+                    <div
+                      key={topic}
+                      data-testid={`prereq-chip-${topic}`}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        border: isKnown
+                          ? '1px solid #15803D'
+                          : '1px solid #E4DFD7',
+                        backgroundColor: isKnown ? '#DCFCE7' : '#FAF8F5',
+                        fontSize: '12px',
+                        color: '#18181B',
+                      }}
+                    >
+                      <span style={{ fontWeight: 600 }}>{topic}</span>
+                      <span
+                        style={{
+                          fontFamily: "'JetBrains Mono', monospace",
+                          fontSize: '11px',
+                          color: isKnown ? '#15803D' : '#65635E',
+                        }}
+                      >
+                        {status}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={
+                          isKnown
+                            ? `Unmark ${topic} as known`
+                            : `Mark ${topic} as known`
+                        }
+                        onClick={() =>
+                          void onTogglePrerequisiteKnown?.(
+                            topic,
+                            isKnown ? 'unseen' : 'known'
+                          )
+                        }
+                        style={{
+                          ...actionBtnStyle,
+                          backgroundColor: isKnown ? '#15803D' : '#FFFFFF',
+                          color: isKnown ? '#FFFFFF' : '#18181B',
+                          borderColor: isKnown ? '#15803D' : '#E4DFD7',
+                        }}
+                      >
+                        ✓ I know this
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Seed prerequisite ${topic}`}
+                        disabled={isLocked || Boolean(seedingPrerequisiteTopic)}
+                        onClick={() => void onSeedPrerequisite?.(topic)}
+                        style={{
+                          ...actionBtnStyle,
+                          backgroundColor: '#FFFFFF',
+                          color: '#1D4ED8',
+                          borderColor: '#1D4ED8',
+                          opacity:
+                            isLocked || Boolean(seedingPrerequisiteTopic)
+                              ? 0.5
+                              : 1,
+                          cursor:
+                            isLocked || Boolean(seedingPrerequisiteTopic)
+                              ? 'not-allowed'
+                              : 'pointer',
+                        }}
+                      >
+                        {seedingPrerequisiteTopic === topic
+                          ? 'Seeding...'
+                          : '↳ Seed Prerequisite'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {childDocuments.map((childDoc) => (
             <SubDocLinkCard
               key={childDoc.id}
