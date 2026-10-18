@@ -31,7 +31,7 @@ Updated: 2026-10-18
   - [x] epic-02-integrate-and-diff-gate — merged 2026-10-18
   - [x] epic-03-diff-gate-ui — merged 2026-10-18
 - [ ] 03-branching-document-tree — in progress
-  - [ ] epic-01-branch-doc-and-ancestor-context — reviewed — pass 2026-10-18
+  - [x] epic-01-branch-doc-and-ancestor-context — merged 2026-10-18
   - [ ] epic-02-tree-navigation-ui — pending
 - [ ] 04-byom-pedagogical-controls — pending
 - [ ] 05-learner-profile-prerequisites — pending
