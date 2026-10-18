@@ -26,3 +26,11 @@ or `dropped`. This file records issues. It never records stage status.
 **Lands in:** unplanned
 
 When the user highlights a phrase, term, or equation inside a Concept Block before or while using `InlineChatDrawer` (`ConceptBlockCard.tsx` / `POST /api/blocks/:id/chat`), capture that selection and include it in the bounded cell context as the explicit focus of the question.
+
+## ISS-4 — Pass docId query parameter on DELETE block and DELETE chat calls inside branched sub-documents
+
+**Raised:** 2026-10-18
+**Status:** open
+**Lands in:** unplanned
+
+`handleDeleteBlock` and `handleDiscardChat` in `src/client/App.tsx` omit `?docId=<document.id>` on `DELETE /api/blocks/:id` and `DELETE /api/blocks/:id/chat` (`epic-02-tree-navigation-ui` review follow-up).
