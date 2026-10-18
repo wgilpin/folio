@@ -43,3 +43,62 @@ When the user opens the Workbench on an empty workspace, they see an editorial S
 ## Notes
 
 - Apply the exact tokens from [design.md](../../design.md): `#FAF8F5` background, `#FFFFFF` card surface, `#F3EFEA` sidebar surface, `#E4DFD7` border, `#18181B` ink, `#65635E` muted text, `#1D4ED8` primary cobalt, and serif prose (`Newsreader`, `Charter`, `Georgia`).
+
+---
+
+## Build note — 2026-10-18
+
+**Result:** green
+
+### Tasks done
+
+- Implemented `src/server/llm.ts` with `SeedGenerator` contract, `FOLIO_MODEL` resolution, and Vercel AI SDK `generateObject` integration using `SeedResultSchema`.
+- Implemented Hono API routes `GET /api/doc` and `POST /api/doc/seed` in `src/server/app.ts` and server entrypoint in `src/server/index.ts`.
+- Built the React Workbench UI (`index.html`, `src/client/main.tsx`, `src/client/App.tsx`, `src/client/components/SidebarTree.tsx`, `src/client/components/SeedModal.tsx`, `src/client/components/ConceptBlockCard.tsx`, and `src/client/components/MermaidDiagram.tsx`) using the editorial tokens from `docs/sdlc/design.md`.
+- Added automated API and UI tests in `src/server/__tests__/api.test.ts` and `src/client/__tests__/Workbench.test.tsx`.
+
+### Tests added
+
+- `src/server/__tests__/api.test.ts` — `GET /api/doc returns null document on empty workspace`
+- `src/server/__tests__/api.test.ts` — `POST /api/doc/seed generates 4-8 blocks and persists index.md and .folio/notebook.json`
+- `src/client/__tests__/Workbench.test.tsx` — `renders empty seed state, submits topic prompt, and displays Concept Blocks, Mermaid diagram container, and Sidebar ToC`
+
+### Suite result
+
+- Command: `npm test`
+- Output: `Test Files 4 passed (4), Tests 7 passed (7)`
+
+### Deviations from the plan
+
+None
+
+### Follow-ups
+
+- Add manual block edit, split, merge, and delete controls on `ConceptBlockCard` and corresponding Hono endpoints in Epic 03.
+
+---
+
+## Review — 2026-10-18
+
+**Verdict:** pass
+
+### Acceptance criteria
+
+| AC | Met | Proved by |
+|---|---|---|
+| AC-1 | yes | `src/server/__tests__/api.test.ts` — `GET /api/doc returns null document on empty workspace` |
+| AC-2 | yes | `src/server/__tests__/api.test.ts` — `POST /api/doc/seed generates 4-8 blocks and persists index.md and .folio/notebook.json` |
+| AC-3 | yes | `src/client/__tests__/Workbench.test.tsx` — `renders empty seed state, submits topic prompt, and displays Concept Blocks, Mermaid diagram container, and Sidebar ToC` |
+| AC-4 | yes | `src/client/__tests__/Workbench.test.tsx` — `renders empty seed state, submits topic prompt, and displays Concept Blocks, Mermaid diagram container, and Sidebar ToC` |
+
+### Drift
+
+None.
+
+### Findings
+
+None.
+
+### Follow-ups
+
+None.
