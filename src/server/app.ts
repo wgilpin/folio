@@ -1,12 +1,18 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { SeedResultSchema, type ChatMessage } from '../shared/schema.js';
+import {
+  IntegrateResultSchema,
+  SeedResultSchema,
+  type ChatMessage,
+} from '../shared/schema.js';
 import { buildBoundedCellContext } from './context.js';
 import {
   defaultCellChatGenerator,
+  defaultIntegrateGenerator,
   defaultSeedGenerator,
   getActiveModelId,
   type CellChatGenerator,
+  type IntegrateGenerator,
   type SeedGenerator,
 } from './llm.js';
 import { generateBlockId } from './markdown.js';
@@ -16,6 +22,7 @@ export interface CreateAppOptions {
   workspaceDir: string;
   seedGenerator?: SeedGenerator;
   cellChatGenerator?: CellChatGenerator;
+  integrateGenerator?: IntegrateGenerator;
   modelId?: string;
 }
 
@@ -42,12 +49,18 @@ const ChatRequestSchema = z.object({
   docId: z.string().optional(),
 });
 
+const IntegrateRequestSchema = z.object({
+  docId: z.string().optional(),
+});
+
 export function createApp(options: CreateAppOptions): Hono {
   const app = new Hono();
   const store = new WorkspaceStore(options.workspaceDir);
   const seedGenerator = options.seedGenerator ?? defaultSeedGenerator;
   const cellChatGenerator =
     options.cellChatGenerator ?? defaultCellChatGenerator;
+  const integrateGenerator =
+    options.integrateGenerator ?? defaultIntegrateGenerator;
 
   app.get('/api/doc', async (c) => {
     const docId = c.req.query('id') ?? 'index';
@@ -324,6 +337,121 @@ export function createApp(options: CreateAppOptions): Hono {
 
     await store.discardChat(docId, blockId);
     return c.json({ activeChat: null });
+  });
+
+  app.post('/api/blocks/:id/integrate', async (c) => {
+    const blockId = c.req.param('id');
+    let rawBody: unknown = {};
+    try {
+      const text = await c.req.text();
+      if (text.trim()) {
+        rawBody = JSON.parse(text);
+      }
+    } catch {
+      return c.json({ error: 'Invalid JSON request body' }, 400);
+    }
+
+    const parsedReq = IntegrateRequestSchema.safeParse(rawBody);
+    if (!parsedReq.success) {
+      return c.json({ error: 'Invalid integrate request' }, 400);
+    }
+
+    const docId = parsedReq.data.docId ?? 'index';
+    const pendingEdits = await store.getPendingEdits(docId);
+    if (pendingEdits.length > 0) {
+      return c.json({ error: 'Resolve pending suggested edits first' }, 409);
+    }
+
+    const activeChat = await store.getActiveChat(docId);
+    if (
+      !activeChat ||
+      activeChat.blockId !== blockId ||
+      activeChat.messages.length === 0
+    ) {
+      return c.json(
+        { error: 'No active chat to integrate for this block' },
+        400
+      );
+    }
+
+    try {
+      const context = await buildBoundedCellContext(store, docId, blockId);
+      const modelId = options.modelId ?? getActiveModelId();
+
+      const integrateResult = IntegrateResultSchema.parse(
+        await integrateGenerator({
+          context,
+          messages: activeChat.messages,
+          modelId,
+        })
+      );
+
+      const saved = await store.integrateBlockChat(
+        docId,
+        blockId,
+        integrateResult
+      );
+
+      return c.json({
+        document: saved.document,
+        blocks: saved.blocks,
+        toc: saved.toc,
+        activeChat: saved.activeChat,
+        pendingEdits: saved.pendingEdits,
+        modelId,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to integrate block chat';
+      const status = message.includes('not found') ? 404 : 500;
+      return c.json({ error: message }, status);
+    }
+  });
+
+  app.post('/api/edits/:editId/accept', async (c) => {
+    const editId = c.req.param('editId');
+
+    try {
+      const saved = await store.acceptPendingEdit(editId);
+      const modelId = options.modelId ?? getActiveModelId();
+
+      return c.json({
+        document: saved.document,
+        blocks: saved.blocks,
+        toc: saved.toc,
+        activeChat: saved.activeChat,
+        pendingEdits: saved.pendingEdits,
+        modelId,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to accept pending edit';
+      const status = message.includes('not found') ? 404 : 400;
+      return c.json({ error: message }, status);
+    }
+  });
+
+  app.post('/api/edits/:editId/reject', async (c) => {
+    const editId = c.req.param('editId');
+
+    try {
+      const saved = await store.rejectPendingEdit(editId);
+      const modelId = options.modelId ?? getActiveModelId();
+
+      return c.json({
+        document: saved.document,
+        blocks: saved.blocks,
+        toc: saved.toc,
+        activeChat: saved.activeChat,
+        pendingEdits: saved.pendingEdits,
+        modelId,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to reject pending edit';
+      const status = message.includes('not found') ? 404 : 400;
+      return c.json({ error: message }, status);
+    }
   });
 
   return app;

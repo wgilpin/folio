@@ -5,6 +5,7 @@ import {
   type ConceptBlock,
   type DocumentNode,
   type EphemeralChatThread,
+  type IntegrateResult,
   type NotebookState,
   type PendingSuggestedEdit,
   type TocItem,
@@ -240,6 +241,10 @@ export class WorkspaceStore {
     assistantReply: string
   ): Promise<EphemeralChatThread> {
     const state = await this.loadState();
+    if (state.pendingEdits.some((e) => e.docId === docId)) {
+      throw new Error('Resolve pending suggested edits first');
+    }
+
     const priorMessages =
       state.activeChat &&
       state.activeChat.docId === docId &&
@@ -285,6 +290,194 @@ export class WorkspaceStore {
       candidate = generateBlockId(idx);
     }
     return candidate;
+  }
+
+  private nextAvailableEditId(pendingEdits: PendingSuggestedEdit[]): string {
+    const used = new Set(pendingEdits.map((e) => e.id));
+    let idx = 1;
+    let candidate = `edit_${String(idx).padStart(2, '0')}`;
+    while (used.has(candidate)) {
+      idx += 1;
+      candidate = `edit_${String(idx).padStart(2, '0')}`;
+    }
+    return candidate;
+  }
+
+  async integrateBlockChat(
+    docId: string,
+    blockId: string,
+    integrateResult: IntegrateResult
+  ): Promise<LoadedDocument> {
+    const state = await this.loadState();
+    if (state.pendingEdits.some((e) => e.docId === docId)) {
+      throw new Error('Resolve pending suggested edits first');
+    }
+
+    const loaded = await this.loadDocument(docId);
+    if (!loaded.document) {
+      throw new Error(`Document not found: ${docId}`);
+    }
+
+    const index = loaded.blocks.findIndex((b) => b.id === blockId);
+    if (index === -1) {
+      throw new Error(`Block not found: ${blockId}`);
+    }
+
+    const prevBlock = index > 0 ? loaded.blocks[index - 1] : null;
+    const nextBlock =
+      index < loaded.blocks.length - 1 ? loaded.blocks[index + 1] : null;
+
+    const targetBlock = loaded.blocks[index];
+    const updatedTargetBlock: ConceptBlock =
+      integrateResult.updatedBlockMarkdown !== null &&
+      integrateResult.updatedBlockMarkdown.trim().length > 0
+        ? {
+            id: targetBlock.id,
+            markdown: integrateResult.updatedBlockMarkdown.trim(),
+          }
+        : targetBlock;
+
+    const workingBlocks: ConceptBlock[] = [
+      ...loaded.blocks.slice(0, index),
+      updatedTargetBlock,
+      ...loaded.blocks.slice(index + 1),
+    ];
+
+    const insertedBlocks: ConceptBlock[] = [];
+    for (const rawInserted of integrateResult.insertedBlocksMarkdown) {
+      const trimmed = rawInserted.trim();
+      if (!trimmed) continue;
+      const newId = this.nextAvailableBlockId([
+        ...workingBlocks,
+        ...insertedBlocks,
+      ]);
+      insertedBlocks.push({
+        id: newId,
+        markdown: trimmed,
+      });
+    }
+
+    const finalBlocks: ConceptBlock[] = [
+      ...workingBlocks.slice(0, index + 1),
+      ...insertedBlocks,
+      ...workingBlocks.slice(index + 1),
+    ];
+
+    // Filter suggestedEdits strictly to original N-1 and N+1 adjacent blocks whose proposedMarkdown differs
+    const stagedEdits = [...state.pendingEdits];
+    const stagedTargets = new Set<string>();
+
+    for (const candidate of integrateResult.suggestedEdits) {
+      const adjacentBlock =
+        prevBlock && prevBlock.id === candidate.targetBlockId
+          ? prevBlock
+          : nextBlock && nextBlock.id === candidate.targetBlockId
+            ? nextBlock
+            : null;
+
+      if (!adjacentBlock) continue;
+      if (stagedTargets.has(adjacentBlock.id)) continue;
+
+      const proposed = candidate.proposedMarkdown.trim();
+      if (!proposed || proposed === adjacentBlock.markdown.trim()) {
+        continue;
+      }
+
+      const editId = this.nextAvailableEditId(stagedEdits);
+      stagedEdits.push({
+        id: editId,
+        docId,
+        blockId: adjacentBlock.id,
+        originalMarkdown: adjacentBlock.markdown,
+        proposedMarkdown: proposed,
+        reason: candidate.reason,
+        sourceBlockId: blockId,
+      });
+      stagedTargets.add(adjacentBlock.id);
+    }
+
+    state.documents[docId] = loaded.document;
+    state.activeChat = null;
+    state.pendingEdits = stagedEdits;
+
+    await fs.mkdir(this.workspaceDir, { recursive: true });
+    await fs.writeFile(
+      path.join(this.workspaceDir, loaded.document.filename),
+      serializeMarkdownBlocks(finalBlocks),
+      'utf-8'
+    );
+    await this.saveState(state);
+
+    return {
+      document: loaded.document,
+      blocks: finalBlocks,
+      toc: extractToc(finalBlocks),
+      activeChat: null,
+      pendingEdits: stagedEdits.filter((e) => e.docId === docId),
+    };
+  }
+
+  async acceptPendingEdit(editId: string): Promise<LoadedDocument> {
+    const state = await this.loadState();
+    const editIndex = state.pendingEdits.findIndex((e) => e.id === editId);
+    if (editIndex === -1) {
+      throw new Error(`Pending edit not found: ${editId}`);
+    }
+
+    const edit = state.pendingEdits[editIndex];
+    const loaded = await this.loadDocument(edit.docId);
+    if (!loaded.document) {
+      throw new Error(`Document not found: ${edit.docId}`);
+    }
+
+    const blockIndex = loaded.blocks.findIndex((b) => b.id === edit.blockId);
+    if (blockIndex === -1) {
+      throw new Error(`Block not found: ${edit.blockId}`);
+    }
+
+    const updatedBlocks = [...loaded.blocks];
+    updatedBlocks[blockIndex] = {
+      id: edit.blockId,
+      markdown: edit.proposedMarkdown.trim(),
+    };
+
+    state.pendingEdits.splice(editIndex, 1);
+    state.documents[edit.docId] = loaded.document;
+
+    await fs.mkdir(this.workspaceDir, { recursive: true });
+    await fs.writeFile(
+      path.join(this.workspaceDir, loaded.document.filename),
+      serializeMarkdownBlocks(updatedBlocks),
+      'utf-8'
+    );
+    await this.saveState(state);
+
+    const activeChat =
+      state.activeChat && state.activeChat.docId === edit.docId
+        ? state.activeChat
+        : null;
+
+    return {
+      document: loaded.document,
+      blocks: updatedBlocks,
+      toc: extractToc(updatedBlocks),
+      activeChat,
+      pendingEdits: state.pendingEdits.filter((e) => e.docId === edit.docId),
+    };
+  }
+
+  async rejectPendingEdit(editId: string): Promise<LoadedDocument> {
+    const state = await this.loadState();
+    const editIndex = state.pendingEdits.findIndex((e) => e.id === editId);
+    if (editIndex === -1) {
+      throw new Error(`Pending edit not found: ${editId}`);
+    }
+
+    const edit = state.pendingEdits[editIndex];
+    state.pendingEdits.splice(editIndex, 1);
+    await this.saveState(state);
+
+    return this.loadDocument(edit.docId);
   }
 
   async updateBlock(

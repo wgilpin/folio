@@ -34,3 +34,56 @@ Calling `POST /api/blocks/:id/integrate` passes the active ephemeral chat transc
 ## Notes
 
 - Ensure `Integrate` system prompt in `src/server/llm.ts` explicitly instructs the model to leave `suggestedEdits` empty unless a factual contradiction, duplicate explanation, or broken transition was introduced in $N-1$ or $N+1$.
+
+---
+
+## Build note — 2026-10-18
+
+**Result:** green
+
+### Tasks done
+
+- Added `IntegrateGenerator` and `defaultIntegrateGenerator` in `src/server/llm.ts` using Vercel AI SDK `generateObject` with `IntegrateResultSchema`, explicitly instructing the model in the system prompt to leave `suggestedEdits` empty (`[]`) unless a factual contradiction, duplicate explanation, or broken transition was introduced in $N-1$ or $N+1$.
+- Implemented `integrateBlockChat`, `acceptPendingEdit`, `rejectPendingEdit`, and the synchronous `pendingEdits` resolution gate in `src/server/store.ts` (`WorkspaceStore`), updating block $N$, inserting `insertedBlocksMarkdown` immediately after block $N$, filtering `suggestedEdits` strictly to valid adjacent ($N-1$ / $N+1$) blocks whose proposed Markdown differs from current Markdown, staging edits into `.folio/notebook.json`, and clearing `activeChat`.
+- Added `integrateGenerator` option and `POST /api/blocks/:id/integrate`, `POST /api/edits/:editId/accept`, and `POST /api/edits/:editId/reject` routes (plus HTTP `409` gate checks) in `src/server/app.ts`.
+
+### Tests added
+
+- `src/server/__tests__/integrate-api.test.ts` — `POST /api/blocks/:id/integrate updates block N, inserts new blocks after N, stages valid N-1/N+1 suggestedEdits, and drops out-of-window edits`
+- `src/server/__tests__/integrate-api.test.ts` — `enforces 409 synchronous edit resolution gate when pendingEdits exist and resolves via accept and reject endpoints`
+
+### Suite result
+
+`npm test` — `Test Files 8 passed (8), Tests 17 passed (17)`
+
+### Deviations from the plan
+
+None.
+
+### Follow-ups
+
+- React UI components for `GateBanner`, `Integrate` button wiring, and inline diff `Accept` / `Reject` cards are covered in Epic 03.
+
+---
+
+## Review — 2026-10-18
+
+**Verdict:** pass
+
+### Pass 1 — Conformance
+
+| Criterion | Met | Test |
+|---|---|---|
+| AC-1 | yes | `src/server/__tests__/integrate-api.test.ts` — `POST /api/blocks/:id/integrate updates block N, inserts new blocks after N, stages valid N-1/N+1 suggestedEdits, and drops out-of-window edits` |
+| AC-2 | yes | `src/server/__tests__/integrate-api.test.ts` — `POST /api/blocks/:id/integrate updates block N, inserts new blocks after N, stages valid N-1/N+1 suggestedEdits, and drops out-of-window edits` |
+| AC-3 | yes | `src/server/__tests__/integrate-api.test.ts` — `enforces 409 synchronous edit resolution gate when pendingEdits exist and resolves via accept and reject endpoints` |
+| AC-4 | yes | `src/server/__tests__/integrate-api.test.ts` — `enforces 409 synchronous edit resolution gate when pendingEdits exist and resolves via accept and reject endpoints` |
+
+### Pass 2 — Drift
+
+- None
+
+### Pass 3 — Correctness
+
+- None
+

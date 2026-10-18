@@ -3,8 +3,10 @@ import { anthropic } from '@ai-sdk/anthropic';
 import { google } from '@ai-sdk/google';
 import { openai } from '@ai-sdk/openai';
 import {
+  IntegrateResultSchema,
   SeedResultSchema,
   type ChatMessage,
+  type IntegrateResult,
   type SeedResult,
 } from '../shared/schema.js';
 import type { BoundedCellContext } from './context.js';
@@ -16,6 +18,12 @@ export type CellChatGenerator = (input: {
   messages: ChatMessage[];
   modelId: string;
 }) => Promise<string>;
+
+export type IntegrateGenerator = (input: {
+  context: BoundedCellContext;
+  messages: ChatMessage[];
+  modelId: string;
+}) => Promise<IntegrateResult>;
 
 export const DEFAULT_MODEL_ID = 'anthropic:claude-opus-4-6';
 
@@ -117,4 +125,32 @@ export const defaultCellChatGenerator: CellChatGenerator = async ({
   });
 
   return text;
+};
+
+export const defaultIntegrateGenerator: IntegrateGenerator = async ({
+  context,
+  messages,
+  modelId,
+}): Promise<IntegrateResult> => {
+  const model = resolveLanguageModel(modelId);
+  const transcript = messages
+    .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
+    .join('\n\n');
+
+  const { object } = await generateObject({
+    model,
+    schema: IntegrateResultSchema,
+    system: [
+      'You are an editorial technical notebook integrator.',
+      'Given a bounded cell context ([N-1, N, N+1] and the Document Table of Contents) and an ephemeral Q&A chat transcript on Target Block N, synthesize the insights from the discussion into clean, self-contained notebook prose:',
+      '1. `updatedBlockMarkdown`: Provide the revised Markdown for Target Block N incorporating the clarifications, or `null` if Block N itself does not need changes.',
+      '2. `insertedBlocksMarkdown`: If the chat uncovered a distinct new sub-concept or derivation that warrants its own Concept Block immediately following Block N, return 1 or more complete Markdown blocks here; otherwise return an empty array `[]`.',
+      '3. `suggestedEdits`: Leave `suggestedEdits` empty (`[]`) UNLESS the changes to Block N or newly inserted blocks introduce a factual contradiction, duplicate explanation, or broken transition in the immediately adjacent blocks (Previous Block N-1 or Next Block N+1). Only target N-1 or N+1 by their exact block ID.',
+      '',
+      formatBoundedContextPrompt(context),
+    ].join('\n'),
+    prompt: `Integrate the following ephemeral chat transcript for Target Block [${context.targetBlock.id}]:\n\n${transcript}`,
+  });
+
+  return object;
 };
