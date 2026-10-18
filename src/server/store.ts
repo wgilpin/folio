@@ -8,6 +8,7 @@ import {
   type IntegrateResult,
   type NotebookState,
   type PendingSuggestedEdit,
+  type SeedResult,
   type TocItem,
 } from '../shared/schema.js';
 import {
@@ -21,8 +22,17 @@ export interface LoadedDocument {
   document: DocumentNode | null;
   blocks: ConceptBlock[];
   toc: TocItem[];
+  documents: Record<string, DocumentNode>;
   activeChat: EphemeralChatThread | null;
   pendingEdits: PendingSuggestedEdit[];
+}
+
+function slugifyTitle(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || 'subdoc';
 }
 
 function splitMarkdownContent(markdown: string, offset?: number): [string, string] {
@@ -136,6 +146,7 @@ export class WorkspaceStore {
         document: null,
         blocks: [],
         toc: [],
+        documents: state.documents,
         activeChat,
         pendingEdits,
       };
@@ -157,12 +168,14 @@ export class WorkspaceStore {
         parentBlockId: null,
         childDocIds: [],
       };
+      state.documents[docId] = docNode;
     }
 
     return {
       document: docNode,
       blocks,
       toc,
+      documents: state.documents,
       activeChat,
       pendingEdits,
     };
@@ -215,6 +228,7 @@ export class WorkspaceStore {
       document: docNode,
       blocks,
       toc,
+      documents: state.documents,
       activeChat,
       pendingEdits,
     };
@@ -412,8 +426,101 @@ export class WorkspaceStore {
       document: loaded.document,
       blocks: finalBlocks,
       toc: extractToc(finalBlocks),
+      documents: state.documents,
       activeChat: null,
       pendingEdits: stagedEdits.filter((e) => e.docId === docId),
+    };
+  }
+
+  async branchDocumentFromChat(
+    docId: string,
+    blockId: string,
+    branchResult: SeedResult
+  ): Promise<LoadedDocument> {
+    const state = await this.loadState();
+    if (state.pendingEdits.some((e) => e.docId === docId)) {
+      throw new Error('Resolve pending suggested edits first');
+    }
+
+    const parentLoaded = await this.loadDocument(docId);
+    if (!parentLoaded.document) {
+      throw new Error(`Document not found: ${docId}`);
+    }
+
+    const blockIndex = parentLoaded.blocks.findIndex((b) => b.id === blockId);
+    if (blockIndex === -1) {
+      throw new Error(`Block not found: ${blockId}`);
+    }
+
+    const baseSlug = slugifyTitle(branchResult.title);
+    let childDocId = baseSlug;
+    let suffix = 2;
+    while (state.documents[childDocId] || childDocId === docId) {
+      childDocId = `${baseSlug}-${suffix}`;
+      suffix += 1;
+    }
+
+    const childFilename = `${childDocId}.md`;
+    const childTitle = branchResult.title.trim();
+
+    const childBlocks: ConceptBlock[] = branchResult.blocks.map(
+      (markdown, index) => ({
+        id:
+          index === 0 && /^#{1,3}\s*0\b|prerequisites/i.test(markdown)
+            ? 'blk_00'
+            : generateBlockId(index),
+        markdown: markdown.trim(),
+      })
+    );
+
+    const parentTargetBlock = parentLoaded.blocks[blockIndex];
+    const linkMarkdown = `[→ Deep dive: ${childTitle}](${childFilename})`;
+    const updatedParentBlocks: ConceptBlock[] = [...parentLoaded.blocks];
+    updatedParentBlocks[blockIndex] = {
+      id: parentTargetBlock.id,
+      markdown: `${parentTargetBlock.markdown.trim()}\n\n${linkMarkdown}`,
+    };
+
+    const parentDocNode: DocumentNode = {
+      ...parentLoaded.document,
+      childDocIds: parentLoaded.document.childDocIds.includes(childDocId)
+        ? parentLoaded.document.childDocIds
+        : [...parentLoaded.document.childDocIds, childDocId],
+    };
+
+    const childDocNode: DocumentNode = {
+      id: childDocId,
+      title: childTitle,
+      filename: childFilename,
+      parentId: docId,
+      parentBlockId: blockId,
+      childDocIds: [],
+    };
+
+    state.documents[docId] = parentDocNode;
+    state.documents[childDocId] = childDocNode;
+    state.activeChat = null;
+
+    await fs.mkdir(this.workspaceDir, { recursive: true });
+    await fs.writeFile(
+      path.join(this.workspaceDir, parentDocNode.filename),
+      serializeMarkdownBlocks(updatedParentBlocks),
+      'utf-8'
+    );
+    await fs.writeFile(
+      path.join(this.workspaceDir, childFilename),
+      serializeMarkdownBlocks(childBlocks),
+      'utf-8'
+    );
+    await this.saveState(state);
+
+    return {
+      document: childDocNode,
+      blocks: childBlocks,
+      toc: extractToc(childBlocks),
+      documents: state.documents,
+      activeChat: null,
+      pendingEdits: [],
     };
   }
 
@@ -461,6 +568,7 @@ export class WorkspaceStore {
       document: loaded.document,
       blocks: updatedBlocks,
       toc: extractToc(updatedBlocks),
+      documents: state.documents,
       activeChat,
       pendingEdits: state.pendingEdits.filter((e) => e.docId === edit.docId),
     };

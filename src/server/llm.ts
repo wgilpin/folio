@@ -25,6 +25,12 @@ export type IntegrateGenerator = (input: {
   modelId: string;
 }) => Promise<IntegrateResult>;
 
+export type BranchGenerator = (input: {
+  context: BoundedCellContext;
+  messages: ChatMessage[];
+  modelId: string;
+}) => Promise<SeedResult>;
+
 export const DEFAULT_MODEL_ID = 'anthropic:claude-opus-4-6';
 
 export function getActiveModelId(env: NodeJS.ProcessEnv = process.env): string {
@@ -150,6 +156,34 @@ export const defaultIntegrateGenerator: IntegrateGenerator = async ({
       formatBoundedContextPrompt(context),
     ].join('\n'),
     prompt: `Integrate the following ephemeral chat transcript for Target Block [${context.targetBlock.id}]:\n\n${transcript}`,
+  });
+
+  return object;
+};
+
+export const defaultBranchGenerator: BranchGenerator = async ({
+  context,
+  messages,
+  modelId,
+}): Promise<SeedResult> => {
+  const model = resolveLanguageModel(modelId);
+  const transcript = messages
+    .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
+    .join('\n\n');
+
+  const { object } = await generateObject({
+    model,
+    schema: SeedResultSchema,
+    system: [
+      'You are an editorial technical notebook author branching a dedicated deep-dive sub-document from an ephemeral Q&A chat on Target Block N.',
+      'Generate a clear, specific child document title and 4 to 8 self-contained Markdown concept blocks that thoroughly unpack the sub-topic explored in the chat:',
+      '1. The VERY FIRST block (Block 0) MUST start with `## 0. Prerequisites & Notation`. It must list the mathematical and conceptual prerequisites needed for this deep dive, define every symbol or notation in plain English, and connect to the parent document context.',
+      '2. Subsequent blocks (`## 1. ...`, `## 2. ...`) should build step-by-step from intuition to full derivation or mechanism, preserving the insights from the Q&A transcript without referencing "the chat" or "the user".',
+      '3. Only include a ```mermaid diagram in a block if a visual diagram genuinely clarifies a structure or flow; most blocks should be clean prose.',
+      '',
+      formatBoundedContextPrompt(context),
+    ].join('\n'),
+    prompt: `Branch a new deep-dive sub-document from the following Q&A discussion on Target Block [${context.targetBlock.id}]:\n\n${transcript}`,
   });
 
   return object;

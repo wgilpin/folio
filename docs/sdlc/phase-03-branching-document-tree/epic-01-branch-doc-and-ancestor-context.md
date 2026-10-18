@@ -31,3 +31,37 @@ Calling `POST /api/blocks/:id/branch` (with optional `{ docId }`) passes the act
 ## Out of scope
 
 - React UI components (`SubDocLinkCard`, `SidebarTree` hierarchy, breadcrumbs) — covered in Epic 02.
+
+## Build note — 2026-10-18
+
+- **Tasks completed:**
+  - Added `BranchGenerator` type and `defaultBranchGenerator` in `src/server/llm.ts` using Vercel AI SDK `generateObject` with `SeedResultSchema`, seeding a child sub-document from bounded cell context and the active ephemeral Q&A transcript.
+  - Added `documents: Record<string, DocumentNode>` to `LoadedDocument` and implemented `WorkspaceStore.branchDocumentFromChat` in `src/server/store.ts` with synchronous `pendingEdits` gate enforcement, slugified and deduplicated child `<slug>.md` creation, parent block `[→ Deep dive: <Child Title>](<child-filename>)` link appending, parent/child tree registration in `.folio/notebook.json`, and `activeChat` cleanup.
+  - Added `POST /api/blocks/:id/branch` (with HTTP 409 diff-gate enforcement) and included `documents` in document API responses in `src/server/app.ts`.
+  - Verified multi-level `ancestorTocs` ordering (`[rootToc, childToc]`) in `buildBoundedCellContext`.
+- **Tests added:**
+  - `src/server/__tests__/branch-api.test.ts` (3 tests covering AC-1, AC-2, AC-3)
+- **Suite result:** 9 test files passed, 21 tests passed (`npm test`).
+- **Deviations from plan:** None.
+
+---
+
+## Review — 2026-10-18
+
+**Verdict:** pass
+
+### Pass 1 — Conformance
+
+| Criterion | Met | Test |
+|---|---|---|
+| AC-1 | yes | `src/server/__tests__/branch-api.test.ts` — `POST /api/blocks/:id/branch creates child .md document, appends markdown link to parent block, updates document tree, and clears activeChat` |
+| AC-2 | yes | `src/server/__tests__/branch-api.test.ts` — `rejects POST /api/blocks/:id/branch with 409 when pendingEdits exist on the parent document` |
+| AC-3 | yes | `src/server/__tests__/branch-api.test.ts` — `buildBoundedCellContext populates root-to-parent ancestorTocs across multi-level branched documents and GET /api/doc returns documents map` |
+
+### Pass 2 — Drift
+
+- None
+
+### Pass 3 — Correctness
+
+- None

@@ -7,10 +7,12 @@ import {
 } from '../shared/schema.js';
 import { buildBoundedCellContext } from './context.js';
 import {
+  defaultBranchGenerator,
   defaultCellChatGenerator,
   defaultIntegrateGenerator,
   defaultSeedGenerator,
   getActiveModelId,
+  type BranchGenerator,
   type CellChatGenerator,
   type IntegrateGenerator,
   type SeedGenerator,
@@ -23,6 +25,7 @@ export interface CreateAppOptions {
   seedGenerator?: SeedGenerator;
   cellChatGenerator?: CellChatGenerator;
   integrateGenerator?: IntegrateGenerator;
+  branchGenerator?: BranchGenerator;
   modelId?: string;
 }
 
@@ -53,6 +56,10 @@ const IntegrateRequestSchema = z.object({
   docId: z.string().optional(),
 });
 
+const BranchRequestSchema = z.object({
+  docId: z.string().optional(),
+});
+
 export function createApp(options: CreateAppOptions): Hono {
   const app = new Hono();
   const store = new WorkspaceStore(options.workspaceDir);
@@ -61,6 +68,7 @@ export function createApp(options: CreateAppOptions): Hono {
     options.cellChatGenerator ?? defaultCellChatGenerator;
   const integrateGenerator =
     options.integrateGenerator ?? defaultIntegrateGenerator;
+  const branchGenerator = options.branchGenerator ?? defaultBranchGenerator;
 
   app.get('/api/doc', async (c) => {
     const docId = c.req.query('id') ?? 'index';
@@ -80,6 +88,7 @@ export function createApp(options: CreateAppOptions): Hono {
       document: loaded.document,
       blocks: loaded.blocks,
       toc: loaded.toc,
+      documents: loaded.documents,
       activeChat: loaded.activeChat,
       pendingEdits: loaded.pendingEdits,
       modelId,
@@ -121,6 +130,7 @@ export function createApp(options: CreateAppOptions): Hono {
         document: saved.document,
         blocks: saved.blocks,
         toc: saved.toc,
+        documents: saved.documents,
         activeChat: saved.activeChat,
         pendingEdits: saved.pendingEdits,
         modelId,
@@ -158,6 +168,7 @@ export function createApp(options: CreateAppOptions): Hono {
         document: saved.document,
         blocks: saved.blocks,
         toc: saved.toc,
+        documents: saved.documents,
         activeChat: saved.activeChat,
         pendingEdits: saved.pendingEdits,
         modelId,
@@ -198,6 +209,7 @@ export function createApp(options: CreateAppOptions): Hono {
         document: saved.document,
         blocks: saved.blocks,
         toc: saved.toc,
+        documents: saved.documents,
         activeChat: saved.activeChat,
         pendingEdits: saved.pendingEdits,
         modelId,
@@ -238,6 +250,7 @@ export function createApp(options: CreateAppOptions): Hono {
         document: saved.document,
         blocks: saved.blocks,
         toc: saved.toc,
+        documents: saved.documents,
         activeChat: saved.activeChat,
         pendingEdits: saved.pendingEdits,
         modelId,
@@ -262,6 +275,7 @@ export function createApp(options: CreateAppOptions): Hono {
         document: saved.document,
         blocks: saved.blocks,
         toc: saved.toc,
+        documents: saved.documents,
         activeChat: saved.activeChat,
         pendingEdits: saved.pendingEdits,
         modelId,
@@ -396,6 +410,7 @@ export function createApp(options: CreateAppOptions): Hono {
         document: saved.document,
         blocks: saved.blocks,
         toc: saved.toc,
+        documents: saved.documents,
         activeChat: saved.activeChat,
         pendingEdits: saved.pendingEdits,
         modelId,
@@ -403,6 +418,76 @@ export function createApp(options: CreateAppOptions): Hono {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Failed to integrate block chat';
+      const status = message.includes('not found') ? 404 : 500;
+      return c.json({ error: message }, status);
+    }
+  });
+
+  app.post('/api/blocks/:id/branch', async (c) => {
+    const blockId = c.req.param('id');
+    let rawBody: unknown = {};
+    try {
+      const text = await c.req.text();
+      if (text.trim()) {
+        rawBody = JSON.parse(text);
+      }
+    } catch {
+      return c.json({ error: 'Invalid JSON request body' }, 400);
+    }
+
+    const parsedReq = BranchRequestSchema.safeParse(rawBody);
+    if (!parsedReq.success) {
+      return c.json({ error: 'Invalid branch request' }, 400);
+    }
+
+    const docId = parsedReq.data.docId ?? 'index';
+    const pendingEdits = await store.getPendingEdits(docId);
+    if (pendingEdits.length > 0) {
+      return c.json({ error: 'Resolve pending suggested edits first' }, 409);
+    }
+
+    const activeChat = await store.getActiveChat(docId);
+    if (
+      !activeChat ||
+      activeChat.blockId !== blockId ||
+      activeChat.messages.length === 0
+    ) {
+      return c.json(
+        { error: 'No active chat to branch for this block' },
+        400
+      );
+    }
+
+    try {
+      const context = await buildBoundedCellContext(store, docId, blockId);
+      const modelId = options.modelId ?? getActiveModelId();
+
+      const branchResult = SeedResultSchema.parse(
+        await branchGenerator({
+          context,
+          messages: activeChat.messages,
+          modelId,
+        })
+      );
+
+      const created = await store.branchDocumentFromChat(
+        docId,
+        blockId,
+        branchResult
+      );
+
+      return c.json({
+        document: created.document,
+        blocks: created.blocks,
+        toc: created.toc,
+        documents: created.documents,
+        activeChat: created.activeChat,
+        pendingEdits: created.pendingEdits,
+        modelId,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to branch sub-document';
       const status = message.includes('not found') ? 404 : 500;
       return c.json({ error: message }, status);
     }
@@ -419,6 +504,7 @@ export function createApp(options: CreateAppOptions): Hono {
         document: saved.document,
         blocks: saved.blocks,
         toc: saved.toc,
+        documents: saved.documents,
         activeChat: saved.activeChat,
         pendingEdits: saved.pendingEdits,
         modelId,
@@ -442,6 +528,7 @@ export function createApp(options: CreateAppOptions): Hono {
         document: saved.document,
         blocks: saved.blocks,
         toc: saved.toc,
+        documents: saved.documents,
         activeChat: saved.activeChat,
         pendingEdits: saved.pendingEdits,
         modelId,
