@@ -3,21 +3,79 @@ import type { DocumentNode, TocItem } from '../../shared/schema.js';
 
 export interface SidebarTreeProps {
   document: DocumentNode | null;
+  documents?: Record<string, DocumentNode>;
   toc: TocItem[];
   modelId: string;
   collapsed: boolean;
   onToggleCollapse: () => void;
   onOpenSeedModal: () => void;
+  onSelectDocument?: (docId: string) => void;
 }
 
 export function SidebarTree({
   document,
+  documents = {},
   toc,
   modelId,
   collapsed,
   onToggleCollapse,
   onOpenSeedModal,
+  onSelectDocument,
 }: SidebarTreeProps): React.ReactElement {
+  const allDocs = Object.values(documents);
+  const rootDocs =
+    allDocs.length > 0
+      ? allDocs.filter((d) => d.parentId === null)
+      : document
+      ? [document]
+      : [];
+
+  const renderDocTree = (docNode: DocumentNode, depth: number): React.ReactElement => {
+    const isActive = document?.id === docNode.id;
+    const children = docNode.childDocIds
+      .map((childId) => documents[childId])
+      .filter((c): c is DocumentNode => Boolean(c));
+
+    return (
+      <li
+        key={docNode.id}
+        style={{
+          listStyle: 'none',
+          margin: 0,
+          padding: 0,
+        }}
+      >
+        <button
+          type="button"
+          aria-label={`Open document ${docNode.title}`}
+          onClick={() => onSelectDocument?.(docNode.id)}
+          style={{
+            width: '100%',
+            textAlign: 'left',
+            padding: '8px 12px',
+            paddingLeft: `${12 + depth * 14}px`,
+            backgroundColor: isActive ? '#FFFFFF' : 'transparent',
+            border: isActive ? '1px solid #E4DFD7' : '1px solid transparent',
+            borderRadius: '6px',
+            fontFamily: "'Inter', system-ui, sans-serif",
+            fontSize: '13px',
+            fontWeight: isActive ? 600 : 400,
+            color: isActive ? '#18181B' : '#65635E',
+            cursor: 'pointer',
+            marginBottom: '4px',
+          }}
+        >
+          {depth > 0 ? `↳ ${docNode.title}` : docNode.title}
+        </button>
+        {children.length > 0 && (
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            {children.map((child) => renderDocTree(child, depth + 1))}
+          </ul>
+        )}
+      </li>
+    );
+  };
+
   if (collapsed) {
     return (
       <aside
@@ -132,20 +190,10 @@ export function SidebarTree({
           >
             Document Tree
           </div>
-          {document ? (
-            <div
-              style={{
-                padding: '8px 12px',
-                backgroundColor: '#FFFFFF',
-                border: '1px solid #E4DFD7',
-                borderRadius: '6px',
-                fontSize: '13px',
-                fontWeight: 500,
-                color: '#18181B',
-              }}
-            >
-              {document.title}
-            </div>
+          {rootDocs.length > 0 ? (
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+              {rootDocs.map((rootDoc) => renderDocTree(rootDoc, 0))}
+            </ul>
           ) : (
             <div style={{ fontSize: '13px', color: '#65635E' }}>
               No documents yet

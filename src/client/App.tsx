@@ -13,6 +13,7 @@ import { SidebarTree } from './components/SidebarTree.js';
 
 interface DocApiResponse {
   document: DocumentNode | null;
+  documents?: Record<string, DocumentNode>;
   blocks: ConceptBlock[];
   toc: TocItem[];
   activeChat?: EphemeralChatThread | null;
@@ -22,6 +23,7 @@ interface DocApiResponse {
 
 export function App(): React.ReactElement {
   const [document, setDocument] = useState<DocumentNode | null>(null);
+  const [documents, setDocuments] = useState<Record<string, DocumentNode>>({});
   const [blocks, setBlocks] = useState<ConceptBlock[]>([]);
   const [toc, setToc] = useState<TocItem[]>([]);
   const [activeChat, setActiveChat] = useState<EphemeralChatThread | null>(null);
@@ -29,6 +31,7 @@ export function App(): React.ReactElement {
   const [pendingEdits, setPendingEdits] = useState<PendingSuggestedEdit[]>([]);
   const [isSendingChat, setIsSendingChat] = useState<boolean>(false);
   const [isIntegratingChat, setIsIntegratingChat] = useState<boolean>(false);
+  const [isBranchingChat, setIsBranchingChat] = useState<boolean>(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [modelId, setModelId] = useState<string>('anthropic:claude-opus-4-6');
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -39,6 +42,14 @@ export function App(): React.ReactElement {
 
   const applyDocResponse = (payload: DocApiResponse) => {
     setDocument(payload.document);
+    if (payload.documents !== undefined) {
+      setDocuments(payload.documents);
+    } else if (payload.document) {
+      setDocuments((prev) => ({
+        ...prev,
+        [payload.document!.id]: payload.document!,
+      }));
+    }
     setBlocks(payload.blocks);
     setToc(payload.toc);
     if (payload.activeChat !== undefined) {
@@ -84,6 +95,22 @@ export function App(): React.ReactElement {
       cancelled = true;
     };
   }, []);
+
+  const handleSelectDocument = async (docId: string) => {
+    try {
+      const res = await fetch(`/api/doc?id=${encodeURIComponent(docId)}`);
+      if (!res.ok) {
+        throw new Error(`Failed to load document (${res.status})`);
+      }
+      const data = (await res.json()) as DocApiResponse;
+      applyDocResponse(data);
+      setActiveChat(null);
+      setActiveChatBlockId(null);
+      setChatError(null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleSeed = async (prompt: string) => {
     setIsSeeding(true);
@@ -251,6 +278,39 @@ export function App(): React.ReactElement {
     }
   };
 
+  const handleBranchChat = async (blockId: string) => {
+    setIsBranchingChat(true);
+    setChatError(null);
+
+    try {
+      const res = await fetch(
+        `/api/blocks/${encodeURIComponent(blockId)}/branch`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ docId: document?.id ?? 'index' }),
+        }
+      );
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          data.error ?? `Failed to branch sub-document (${res.status})`
+        );
+      }
+
+      applyDocResponse(data as DocApiResponse);
+      setActiveChat(null);
+      setActiveChatBlockId(null);
+    } catch (err) {
+      setChatError(
+        err instanceof Error ? err.message : 'Failed to branch sub-document'
+      );
+    } finally {
+      setIsBranchingChat(false);
+    }
+  };
+
   const handleAcceptEdit = async (editId: string) => {
     try {
       const res = await fetch(
@@ -295,6 +355,21 @@ export function App(): React.ReactElement {
     }
   };
 
+  const ancestorChain: DocumentNode[] = [];
+  if (document) {
+    let currParentId = document.parentId;
+    const visited = new Set<string>();
+    while (currParentId && !visited.has(currParentId)) {
+      visited.add(currParentId);
+      const parentDoc = documents[currParentId];
+      if (!parentDoc) {
+        break;
+      }
+      ancestorChain.unshift(parentDoc);
+      currParentId = parentDoc.parentId;
+    }
+  }
+
   return (
     <div
       style={{
@@ -306,11 +381,13 @@ export function App(): React.ReactElement {
     >
       <SidebarTree
         document={document}
+        documents={documents}
         toc={toc}
         modelId={modelId}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
         onOpenSeedModal={() => setIsSeedModalOpen(true)}
+        onSelectDocument={(docId) => void handleSelectDocument(docId)}
       />
 
       <main
@@ -344,6 +421,47 @@ export function App(): React.ReactElement {
           ) : (
             <>
               <header style={{ marginBottom: '32px' }}>
+                {ancestorChain.length > 0 && (
+                  <nav
+                    aria-label="Document Breadcrumbs"
+                    data-testid="document-breadcrumbs"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '6px',
+                      fontFamily: "'Inter', system-ui, sans-serif",
+                      fontSize: '13px',
+                      color: '#65635E',
+                      marginBottom: '8px',
+                    }}
+                  >
+                    {ancestorChain.map((anc) => (
+                      <React.Fragment key={anc.id}>
+                        <button
+                          type="button"
+                          onClick={() => void handleSelectDocument(anc.id)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: 0,
+                            fontFamily: "'Inter', system-ui, sans-serif",
+                            fontSize: '13px',
+                            color: '#1D4ED8',
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                          }}
+                        >
+                          {anc.title}
+                        </button>
+                        <span aria-hidden="true">/</span>
+                      </React.Fragment>
+                    ))}
+                    <span style={{ color: '#18181B', fontWeight: 500 }}>
+                      {document.title}
+                    </span>
+                  </nav>
+                )}
                 <div
                   style={{
                     fontFamily: "'Inter', system-ui, sans-serif",
@@ -382,6 +500,10 @@ export function App(): React.ReactElement {
                       : [];
                   const pendingEdit =
                     pendingEdits.find((e) => e.blockId === block.id) ?? null;
+                  const childDocs = Object.values(documents).filter(
+                    (d) =>
+                      d.parentId === document.id && d.parentBlockId === block.id
+                  );
 
                   return (
                     <ConceptBlockCard
@@ -392,13 +514,19 @@ export function App(): React.ReactElement {
                       chatMessages={chatMessages}
                       isSendingChat={isChatOpen && isSendingChat}
                       isIntegratingChat={isChatOpen && isIntegratingChat}
+                      isBranchingChat={isChatOpen && isBranchingChat}
                       chatError={isChatOpen ? chatError : null}
                       isChatLocked={pendingEdits.length > 0}
                       askCellDisabled={pendingEdits.length > 0}
                       pendingEdit={pendingEdit}
+                      childDocuments={childDocs}
+                      onSelectDocument={(docId) =>
+                        void handleSelectDocument(docId)
+                      }
                       onOpenChat={handleOpenChat}
                       onSendChatMessage={handleSendChatMessage}
                       onIntegrateChat={handleIntegrateChat}
+                      onBranchChat={handleBranchChat}
                       onDiscardChat={handleDiscardChat}
                       onAcceptEdit={handleAcceptEdit}
                       onRejectEdit={handleRejectEdit}
