@@ -33,7 +33,9 @@ Updated: 2026-10-18
 - [x] 03-branching-document-tree — done
   - [x] epic-01-branch-doc-and-ancestor-context — merged 2026-10-18
   - [x] epic-02-tree-navigation-ui — merged 2026-10-18
-- [ ] 04-byom-pedagogical-controls — pending
+- [ ] 04-byom-pedagogical-controls — in progress
+  - [x] epic-01-byom-settings-and-workspace-api — merged 2026-10-18
+  - [ ] epic-02-sidebar-controls-and-workspace-ui — pending
 - [ ] 05-learner-profile-prerequisites — pending
 
 ## Notes for a fresh session

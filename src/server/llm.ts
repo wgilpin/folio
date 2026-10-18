@@ -7,31 +7,87 @@ import {
   SeedResultSchema,
   type ChatMessage,
   type IntegrateResult,
+  type NotebookSettings,
+  type PedagogicalProfileId,
+  type ReasoningEffort,
   type SeedResult,
 } from '../shared/schema.js';
 import type { BoundedCellContext } from './context.js';
 
-export type SeedGenerator = (prompt: string) => Promise<SeedResult>;
+export interface SeedGeneratorOptions {
+  modelId?: string;
+  reasoningEffort?: ReasoningEffort;
+  pedagogicalPrompt?: string;
+}
+
+export type SeedGenerator = (
+  prompt: string,
+  options?: SeedGeneratorOptions
+) => Promise<SeedResult>;
 
 export type CellChatGenerator = (input: {
   context: BoundedCellContext;
   messages: ChatMessage[];
   modelId: string;
+  reasoningEffort?: ReasoningEffort;
+  pedagogicalPrompt?: string;
 }) => Promise<string>;
 
 export type IntegrateGenerator = (input: {
   context: BoundedCellContext;
   messages: ChatMessage[];
   modelId: string;
+  reasoningEffort?: ReasoningEffort;
+  pedagogicalPrompt?: string;
 }) => Promise<IntegrateResult>;
 
 export type BranchGenerator = (input: {
   context: BoundedCellContext;
   messages: ChatMessage[];
   modelId: string;
+  reasoningEffort?: ReasoningEffort;
+  pedagogicalPrompt?: string;
 }) => Promise<SeedResult>;
 
 export const DEFAULT_MODEL_ID = 'anthropic:claude-opus-4-6';
+
+export const PEDAGOGICAL_PROFILES: Record<
+  PedagogicalProfileId,
+  { id: PedagogicalProfileId; label: string; instructions: string }
+> = {
+  'intuitive-physical': {
+    id: 'intuitive-physical',
+    label: 'Intuitive & Physical',
+    instructions:
+      'Pedagogical Profile (Intuitive & Physical): Emphasize physical and geometric intuition, concrete real-world analogies, and plain-English explanation before introducing mathematical formalism.',
+  },
+  'rigorous-derivation': {
+    id: 'rigorous-derivation',
+    label: 'Rigorous Derivation',
+    instructions:
+      'Pedagogical Profile (Rigorous Derivation): Emphasize step-by-step mathematical derivations, explicit assumptions, boundary conditions, and formal precision.',
+  },
+  custom: {
+    id: 'custom',
+    label: 'Custom Prompt',
+    instructions:
+      'Pedagogical Profile (Intuitive & Physical): Emphasize physical and geometric intuition, concrete real-world analogies, and plain-English explanation before introducing mathematical formalism.',
+  },
+};
+
+export function resolvePedagogicalPrompt(
+  settings?: Partial<NotebookSettings>
+): string {
+  const profileId = settings?.activeProfileId ?? 'intuitive-physical';
+  if (profileId === 'custom') {
+    const custom = settings?.customSystemPrompt?.trim();
+    return custom || PEDAGOGICAL_PROFILES['intuitive-physical'].instructions;
+  }
+  return (
+    PEDAGOGICAL_PROFILES[profileId]?.instructions ??
+    PEDAGOGICAL_PROFILES['intuitive-physical'].instructions
+  );
+}
 
 export function getActiveModelId(env: NodeJS.ProcessEnv = process.env): string {
   return env.FOLIO_MODEL?.trim() || DEFAULT_MODEL_ID;
@@ -89,9 +145,13 @@ export function formatBoundedContextPrompt(context: BoundedCellContext): string 
 }
 
 export const defaultSeedGenerator: SeedGenerator = async (
-  prompt: string
+  prompt: string,
+  options?: SeedGeneratorOptions
 ): Promise<SeedResult> => {
-  const modelId = getActiveModelId();
+  const modelId = options?.modelId ?? getActiveModelId();
+  const reasoningEffort = options?.reasoningEffort ?? 'high';
+  const pedagogicalPrompt =
+    options?.pedagogicalPrompt ?? resolvePedagogicalPrompt();
   const model = resolveLanguageModel(modelId);
 
   const { object } = await generateObject({
@@ -99,6 +159,8 @@ export const defaultSeedGenerator: SeedGenerator = async (
     schema: SeedResultSchema,
     system: [
       'You are an editorial technical notebook author writing for a curious learner who may not already know the underlying mathematics or specialist notation.',
+      pedagogicalPrompt,
+      `Reasoning Effort: ${reasoningEffort}`,
       'Generate a clear document title and 4 to 8 self-contained Markdown concept blocks exploring the user topic:',
       '1. The VERY FIRST block (Block 0) MUST start with `## 0. Prerequisites & Notation`. It must list the mathematical and conceptual prerequisites needed to understand this topic, define every symbol or notation that will appear later in plain English, and give the intuitive picture before any equations are used.',
       '2. Subsequent blocks (`## 1. ...`, `## 2. ...`) should build step-by-step from intuition to formalism, explaining what each equation physically or conceptually means in plain words rather than assuming prior familiarity.',
@@ -114,13 +176,18 @@ export const defaultCellChatGenerator: CellChatGenerator = async ({
   context,
   messages,
   modelId,
+  reasoningEffort = 'high',
+  pedagogicalPrompt,
 }): Promise<string> => {
   const model = resolveLanguageModel(modelId);
+  const resolvedPedagogy = pedagogicalPrompt ?? resolvePedagogicalPrompt();
   const { text } = await generateText({
     model,
     system: [
       'You are an expert technical tutor answering questions about a specific Concept Block (Block N) inside a structured notebook.',
       'Explain concepts clearly, ground equations in intuition, and stay focused on the target block while respecting the surrounding [N-1, N, N+1] context.',
+      resolvedPedagogy,
+      `Reasoning Effort: ${reasoningEffort}`,
       '',
       formatBoundedContextPrompt(context),
     ].join('\n'),
@@ -137,8 +204,11 @@ export const defaultIntegrateGenerator: IntegrateGenerator = async ({
   context,
   messages,
   modelId,
+  reasoningEffort = 'high',
+  pedagogicalPrompt,
 }): Promise<IntegrateResult> => {
   const model = resolveLanguageModel(modelId);
+  const resolvedPedagogy = pedagogicalPrompt ?? resolvePedagogicalPrompt();
   const transcript = messages
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
     .join('\n\n');
@@ -148,6 +218,8 @@ export const defaultIntegrateGenerator: IntegrateGenerator = async ({
     schema: IntegrateResultSchema,
     system: [
       'You are an editorial technical notebook integrator.',
+      resolvedPedagogy,
+      `Reasoning Effort: ${reasoningEffort}`,
       'Given a bounded cell context ([N-1, N, N+1] and the Document Table of Contents) and an ephemeral Q&A chat transcript on Target Block N, synthesize the insights from the discussion into clean, self-contained notebook prose:',
       '1. `updatedBlockMarkdown`: Provide the revised Markdown for Target Block N incorporating the clarifications, or `null` if Block N itself does not need changes.',
       '2. `insertedBlocksMarkdown`: If the chat uncovered a distinct new sub-concept or derivation that warrants its own Concept Block immediately following Block N, return 1 or more complete Markdown blocks here; otherwise return an empty array `[]`.',
@@ -165,8 +237,11 @@ export const defaultBranchGenerator: BranchGenerator = async ({
   context,
   messages,
   modelId,
+  reasoningEffort = 'high',
+  pedagogicalPrompt,
 }): Promise<SeedResult> => {
   const model = resolveLanguageModel(modelId);
+  const resolvedPedagogy = pedagogicalPrompt ?? resolvePedagogicalPrompt();
   const transcript = messages
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
     .join('\n\n');
@@ -176,6 +251,8 @@ export const defaultBranchGenerator: BranchGenerator = async ({
     schema: SeedResultSchema,
     system: [
       'You are an editorial technical notebook author branching a dedicated deep-dive sub-document from an ephemeral Q&A chat on Target Block N.',
+      resolvedPedagogy,
+      `Reasoning Effort: ${reasoningEffort}`,
       'Generate a clear, specific child document title and 4 to 8 self-contained Markdown concept blocks that thoroughly unpack the sub-topic explored in the chat:',
       '1. The VERY FIRST block (Block 0) MUST start with `## 0. Prerequisites & Notation`. It must list the mathematical and conceptual prerequisites needed for this deep dive, define every symbol or notation in plain English, and connect to the parent document context.',
       '2. Subsequent blocks (`## 1. ...`, `## 2. ...`) should build step-by-step from intuition to full derivation or mechanism, preserving the insights from the Q&A transcript without referencing "the chat" or "the user".',

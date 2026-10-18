@@ -1,11 +1,13 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import {
+  NotebookSettingsSchema,
   NotebookStateSchema,
   type ConceptBlock,
   type DocumentNode,
   type EphemeralChatThread,
   type IntegrateResult,
+  type NotebookSettings,
   type NotebookState,
   type PendingSuggestedEdit,
   type SeedResult,
@@ -25,6 +27,7 @@ export interface LoadedDocument {
   documents: Record<string, DocumentNode>;
   activeChat: EphemeralChatThread | null;
   pendingEdits: PendingSuggestedEdit[];
+  settings: NotebookSettings;
 }
 
 function slugifyTitle(title: string): string {
@@ -108,6 +111,16 @@ export class WorkspaceStore {
     return path.join(this.sidecarDir, 'notebook.json');
   }
 
+  private resolveStateSettings(
+    state: NotebookState,
+    defaultModelId?: string
+  ): NotebookSettings {
+    return NotebookSettingsSchema.parse({
+      ...(defaultModelId ? { modelId: defaultModelId } : {}),
+      ...(state.settings ?? {}),
+    });
+  }
+
   async loadState(): Promise<NotebookState> {
     try {
       const raw = await fs.readFile(this.sidecarPath, 'utf-8');
@@ -126,8 +139,31 @@ export class WorkspaceStore {
     );
   }
 
+  async getSettings(defaultModelId?: string): Promise<NotebookSettings> {
+    const state = await this.loadState();
+    return this.resolveStateSettings(state, defaultModelId);
+  }
+
+  async updateSettings(
+    patch: Partial<NotebookSettings>,
+    defaultModelId?: string
+  ): Promise<NotebookSettings> {
+    const state = await this.loadState();
+    const current = this.resolveStateSettings(state, defaultModelId);
+    const updated = NotebookSettingsSchema.parse({
+      ...current,
+      ...Object.fromEntries(
+        Object.entries(patch).filter(([, value]) => value !== undefined)
+      ),
+    });
+    state.settings = updated;
+    await this.saveState(state);
+    return updated;
+  }
+
   async loadDocument(docId = 'index'): Promise<LoadedDocument> {
     const state = await this.loadState();
+    const settings = this.resolveStateSettings(state);
     const activeChat =
       state.activeChat && state.activeChat.docId === docId
         ? state.activeChat
@@ -149,6 +185,7 @@ export class WorkspaceStore {
         documents: state.documents,
         activeChat,
         pendingEdits,
+        settings,
       };
     }
 
@@ -178,6 +215,7 @@ export class WorkspaceStore {
       documents: state.documents,
       activeChat,
       pendingEdits,
+      settings,
     };
   }
 
@@ -231,6 +269,7 @@ export class WorkspaceStore {
       documents: state.documents,
       activeChat,
       pendingEdits,
+      settings: this.resolveStateSettings(state),
     };
   }
 
@@ -429,6 +468,7 @@ export class WorkspaceStore {
       documents: state.documents,
       activeChat: null,
       pendingEdits: stagedEdits.filter((e) => e.docId === docId),
+      settings: this.resolveStateSettings(state),
     };
   }
 
@@ -521,6 +561,7 @@ export class WorkspaceStore {
       documents: state.documents,
       activeChat: null,
       pendingEdits: [],
+      settings: this.resolveStateSettings(state),
     };
   }
 
@@ -571,6 +612,7 @@ export class WorkspaceStore {
       documents: state.documents,
       activeChat,
       pendingEdits: state.pendingEdits.filter((e) => e.docId === edit.docId),
+      settings: this.resolveStateSettings(state),
     };
   }
 
