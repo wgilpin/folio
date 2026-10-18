@@ -626,6 +626,26 @@ export function ConceptBlockCard({
                   const status: TopicFamiliarity =
                     learnerProfile?.topics?.[topic] ?? 'unseen';
                   const isKnown = status === 'known';
+                  const normTopic = topic.trim().toLowerCase();
+                  const hyphenTopic = normTopic
+                    .replace(/[^a-z0-9]+/g, '-')
+                    .replace(/^-+|-+$/g, '');
+                  const underscoreTopic = normTopic
+                    .replace(/[^a-z0-9]+/g, '_')
+                    .replace(/^_+|_+$/g, '');
+                  const existingChildDoc = childDocuments.find((doc) => {
+                    const normTitle = doc.title.trim().toLowerCase();
+                    const normId = doc.id.trim().toLowerCase();
+                    return (
+                      normTitle === normTopic ||
+                      normTitle.includes(normTopic) ||
+                      normTopic.includes(normTitle) ||
+                      (hyphenTopic.length > 0 && normId.includes(hyphenTopic)) ||
+                      (underscoreTopic.length > 0 &&
+                        normId.includes(underscoreTopic))
+                    );
+                  });
+
                   return (
                     <div
                       key={topic}
@@ -676,30 +696,49 @@ export function ConceptBlockCard({
                       >
                         ✓ I know this
                       </button>
-                      <button
-                        type="button"
-                        aria-label={`Seed prerequisite ${topic}`}
-                        disabled={isLocked || Boolean(seedingPrerequisiteTopic)}
-                        onClick={() => void onSeedPrerequisite?.(topic)}
-                        style={{
-                          ...actionBtnStyle,
-                          backgroundColor: '#FFFFFF',
-                          color: '#1D4ED8',
-                          borderColor: '#1D4ED8',
-                          opacity:
-                            isLocked || Boolean(seedingPrerequisiteTopic)
-                              ? 0.5
-                              : 1,
-                          cursor:
-                            isLocked || Boolean(seedingPrerequisiteTopic)
-                              ? 'not-allowed'
-                              : 'pointer',
-                        }}
-                      >
-                        {seedingPrerequisiteTopic === topic
-                          ? 'Seeding...'
-                          : '↳ Seed Prerequisite'}
-                      </button>
+                      {existingChildDoc ? (
+                        <button
+                          type="button"
+                          aria-label={`Open prerequisite ${topic}`}
+                          onClick={() =>
+                            onSelectDocument?.(existingChildDoc.id)
+                          }
+                          style={{
+                            ...actionBtnStyle,
+                            backgroundColor: '#FFFFFF',
+                            color: '#1D4ED8',
+                            borderColor: '#1D4ED8',
+                            fontWeight: 500,
+                          }}
+                        >
+                          {`→ Open ${topic}`}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          aria-label={`Seed prerequisite ${topic}`}
+                          disabled={isLocked || Boolean(seedingPrerequisiteTopic)}
+                          onClick={() => void onSeedPrerequisite?.(topic)}
+                          style={{
+                            ...actionBtnStyle,
+                            backgroundColor: '#FFFFFF',
+                            color: '#1D4ED8',
+                            borderColor: '#1D4ED8',
+                            opacity:
+                              isLocked || Boolean(seedingPrerequisiteTopic)
+                                ? 0.5
+                                : 1,
+                            cursor:
+                              isLocked || Boolean(seedingPrerequisiteTopic)
+                                ? 'not-allowed'
+                                : 'pointer',
+                          }}
+                        >
+                          {seedingPrerequisiteTopic === topic
+                            ? 'Seeding...'
+                            : '↳ Seed Prerequisite'}
+                        </button>
+                      )}
                     </div>
                   );
                 })}

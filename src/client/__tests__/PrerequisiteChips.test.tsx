@@ -236,6 +236,31 @@ describe('Epic 02: Interactive Block 0 Prerequisite Chips UI', () => {
           json: async () => initialDocPayload,
         };
       }
+      if (
+        url === '/api/doc?id=index' &&
+        (!init || !init.method || init.method === 'GET')
+      ) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ...initialDocPayload,
+            document: seededChildPayload.documents.index,
+            documents: seededChildPayload.documents,
+            profile: seededChildPayload.profile,
+          }),
+        };
+      }
+      if (
+        url === '/api/doc?id=sub_01_symplectic_geometry' &&
+        (!init || !init.method || init.method === 'GET')
+      ) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => seededChildPayload,
+        };
+      }
       if (url === '/api/prerequisites/seed' && init?.method === 'POST') {
         return {
           ok: true,
@@ -276,6 +301,31 @@ describe('Epic 02: Interactive Block 0 Prerequisite Chips UI', () => {
         }).length
       ).toBeGreaterThan(0);
       expect(screen.getByTestId('prereq-chip-Differential Forms')).toBeTruthy();
+    });
+
+    // Navigate back to parent document via breadcrumb and verify '↳ Seed Prerequisite' is replaced with '→ Open Symplectic Geometry'
+    const parentBreadcrumb = screen.getByRole('button', {
+      name: 'Hamiltonian Mechanics',
+    });
+    fireEvent.click(parentBreadcrumb);
+
+    const openPrereqBtn = await screen.findByRole('button', {
+      name: 'Open prerequisite Symplectic Geometry',
+    });
+    expect(openPrereqBtn.textContent).toBe('→ Open Symplectic Geometry');
+    expect(
+      screen.queryByRole('button', {
+        name: 'Seed prerequisite Symplectic Geometry',
+      })
+    ).toBeNull();
+
+    // Clicking '→ Open Symplectic Geometry' opens the child document without reseeding
+    fireEvent.click(openPrereqBtn);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/doc?id=sub_01_symplectic_geometry'
+      );
     });
   });
 });

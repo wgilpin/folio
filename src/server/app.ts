@@ -88,10 +88,17 @@ const SeedPrerequisiteRequestSchema = z.object({
   parentDocId: z.string().optional(),
 });
 
+import * as path from 'node:path';
+
 export function createApp(options: CreateAppOptions): Hono {
   const app = new Hono();
   let store = new WorkspaceStore(options.workspaceDir);
-  const profileStore = new LearnerProfileStore(options.profilePath);
+  const resolvedProfilePath =
+    options.profilePath ??
+    (process.env.VITEST
+      ? path.join(options.workspaceDir, '.folio', 'profile.json')
+      : undefined);
+  const profileStore = new LearnerProfileStore(resolvedProfilePath);
   const knownWorkspaces = new Set<string>([options.workspaceDir]);
   const seedGenerator = options.seedGenerator ?? defaultSeedGenerator;
   const cellChatGenerator =
@@ -185,6 +192,26 @@ export function createApp(options: CreateAppOptions): Hono {
     try {
       const settings = await store.getSettings(getDefaultModelId());
       const currentProfile = await profileStore.loadProfile();
+
+      const existing = await store.findExistingPrerequisiteDocument(
+        parentDocId,
+        parsedReq.data.topic
+      );
+      if (existing && existing.document) {
+        return c.json({
+          document: existing.document,
+          blocks: existing.blocks,
+          toc: existing.toc,
+          documents: existing.documents,
+          activeChat: existing.activeChat,
+          pendingEdits: existing.pendingEdits,
+          settings,
+          workspaceDir: store.workspaceDir,
+          workspaces: Array.from(knownWorkspaces),
+          profile: currentProfile,
+          modelId: settings.modelId,
+        });
+      }
 
       const seedResult = SeedResultSchema.parse(
         await seedGenerator(parsedReq.data.topic, {

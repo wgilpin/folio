@@ -586,6 +586,33 @@ export class WorkspaceStore {
     };
   }
 
+  async findExistingPrerequisiteDocument(
+    parentDocId: string,
+    topic: string
+  ): Promise<LoadedDocument | null> {
+    const state = await this.loadState();
+    const normTopic = topic.trim().toLowerCase();
+    const topicSlug = slugifyTitle(topic);
+
+    const existingDoc = Object.values(state.documents).find((doc) => {
+      if (doc.parentId !== parentDocId) return false;
+      const normTitle = doc.title.trim().toLowerCase();
+      return (
+        normTitle === normTopic ||
+        normTitle.includes(normTopic) ||
+        normTopic.includes(normTitle) ||
+        doc.id === topicSlug ||
+        doc.id.includes(topicSlug)
+      );
+    });
+
+    if (!existingDoc) {
+      return null;
+    }
+
+    return this.loadDocument(existingDoc.id);
+  }
+
   async branchPrerequisiteDocument(
     parentDocId: string,
     _topic: string,
