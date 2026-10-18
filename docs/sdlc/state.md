@@ -22,7 +22,10 @@ Updated: 2026-10-18
 
 ## Phases
 
-- [ ] 01-tracer-bullet-workbench — pending
+- [ ] 01-tracer-bullet-workbench — in progress
+  - [ ] epic-01-markdown-store — pending
+  - [ ] epic-02-seed-and-read-ui — pending
+  - [ ] epic-03-manual-block-editing — pending
 - [ ] 02-inline-chat-integrate — pending
 - [ ] 03-branching-document-tree — pending
 - [ ] 04-byom-pedagogical-controls — pending
