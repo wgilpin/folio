@@ -180,47 +180,157 @@ export function isPrerequisiteBlock(block: ConceptBlock): boolean {
   );
 }
 
+function extractBulletTopic(rawLine: string): string | null {
+  const line = rawLine.trim();
+  const bulletMatch = line.match(/^[-*]\s+(.+)$/);
+  if (!bulletMatch) return null;
+
+  const content = bulletMatch[1]
+    .replace(/\[→\s*Deep dive:.*?\]\(.*?\)/g, '')
+    .trim();
+  if (!content) return null;
+
+  let candidate: string | null = null;
+  const boldMatch =
+    content.match(/^\*\*(.+?)\*\*\s*(?:[:—–-].*|$)/) ??
+    content.match(/^\*\*(.+?[:—–-])\*\*(?:\s+.*|$)/);
+  if (boldMatch) {
+    candidate = boldMatch[1].replace(/[:—–-]+\s*$/, '').trim();
+  } else {
+    const colonMatch = content.match(/^([^:(\n—–-]+?)\s*[:—–-]\s+.+$/);
+    if (colonMatch) {
+      candidate = colonMatch[1].replace(/^[*`]+|[*`]+$/g, '').trim();
+    } else if (content.length <= 60) {
+      candidate = content.replace(/^[*`]+|[*`]+$/g, '').trim();
+    }
+  }
+
+  if (
+    candidate &&
+    candidate.length > 1 &&
+    !candidate.startsWith('$') &&
+    !candidate.startsWith('\\')
+  ) {
+    return candidate;
+  }
+
+  return null;
+}
+
 export function extractPrerequisitesFromBlock0(markdown: string): string[] {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
   const topics: string[] = [];
   const seen = new Set<string>();
 
   for (const rawLine of lines) {
-    const line = rawLine.trim();
-    const bulletMatch = line.match(/^[-*]\s+(.+)$/);
-    if (!bulletMatch) continue;
-
-    const content = bulletMatch[1]
-      .replace(/\[→\s*Deep dive:.*?\]\(.*?\)/g, '')
-      .trim();
-    if (!content) continue;
-
-    let candidate: string | null = null;
-    const boldMatch = content.match(/^\*\*([^*]+)\*\*(?:\s*[:—–-].*)?$/);
-    if (boldMatch) {
-      candidate = boldMatch[1].trim();
-    } else {
-      const colonMatch = content.match(/^([^:(\n—–-]+?)\s*[:—–-]\s+.+$/);
-      if (colonMatch) {
-        candidate = colonMatch[1].replace(/^[*`]+|[*`]+$/g, '').trim();
-      } else if (content.length <= 60) {
-        candidate = content.replace(/^[*`]+|[*`]+$/g, '').trim();
-      }
-    }
-
-    if (
-      candidate &&
-      candidate.length > 1 &&
-      !candidate.startsWith('$') &&
-      !candidate.startsWith('\\') &&
-      !seen.has(candidate)
-    ) {
+    const candidate = extractBulletTopic(rawLine);
+    if (candidate && !seen.has(candidate)) {
       seen.add(candidate);
       topics.push(candidate);
     }
   }
 
   return topics;
+}
+
+function normalizePhraseForOverlap(text: string): string {
+  return text
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/^#+\s*/, '')
+    .replace(/^\d+(?:\.\d+)*\.?\s+/, '')
+    .replace(/[*_`~]/g, '')
+    .replace(/[:—–-]+$/, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function isTopicCoveredByBodyOrTitle(
+  topic: string,
+  bodyHeadings: string[],
+  docTitle?: string
+): boolean {
+  const cleanTopic = normalizePhraseForOverlap(topic);
+  if (cleanTopic.length < 4) {
+    return false;
+  }
+
+  const escapedTopic = cleanTopic.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const boundaryRe = new RegExp(`(?:^|[^a-z0-9])${escapedTopic}(?:$|[^a-z0-9])`, 'i');
+
+  if (docTitle) {
+    const cleanDocTitle = normalizePhraseForOverlap(docTitle.split(':')[0] ?? docTitle);
+    if (cleanDocTitle.length >= 4 && cleanDocTitle === cleanTopic) {
+      return true;
+    }
+  }
+
+  for (const rawHeading of bodyHeadings) {
+    const cleanHeading = normalizePhraseForOverlap(rawHeading);
+    if (!cleanHeading) continue;
+    if (cleanHeading === cleanTopic || boundaryRe.test(cleanHeading)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function sanitizePrerequisitesAndBlock0(
+  blocks: ConceptBlock[],
+  explicitPrerequisites?: string[],
+  options?: { docTitle?: string; plannedToc?: string[] }
+): { blocks: ConceptBlock[]; prerequisites: string[] | undefined } {
+  if (blocks.length === 0) {
+    return { blocks, prerequisites: explicitPrerequisites };
+  }
+
+  const bodyBlocks = isPrerequisiteBlock(blocks[0]) ? blocks.slice(1) : blocks;
+  const bodyTocItems = extractToc(bodyBlocks);
+  const bodyHeadings = [
+    ...bodyTocItems.map((item) => item.text),
+    ...(options?.plannedToc ?? []),
+  ];
+
+  const filteredPrerequisites = explicitPrerequisites
+    ? explicitPrerequisites.filter(
+        (topic) =>
+          !isTopicCoveredByBodyOrTitle(topic, bodyHeadings, options?.docTitle)
+      )
+    : undefined;
+
+  if (!isPrerequisiteBlock(blocks[0]) || bodyHeadings.length === 0) {
+    return { blocks, prerequisites: filteredPrerequisites };
+  }
+
+  const block0Lines = blocks[0].markdown.replace(/\r\n/g, '\n').split('\n');
+  const keptLines: string[] = [];
+
+  for (const line of block0Lines) {
+    const bulletTopic = extractBulletTopic(line);
+    if (
+      bulletTopic &&
+      isTopicCoveredByBodyOrTitle(bulletTopic, bodyHeadings, options?.docTitle)
+    ) {
+      continue;
+    }
+    keptLines.push(line);
+  }
+
+  const cleanedBlock0Markdown = keptLines
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  const updatedBlocks: ConceptBlock[] = [
+    { ...blocks[0], markdown: cleanedBlock0Markdown },
+    ...blocks.slice(1),
+  ];
+
+  return {
+    blocks: updatedBlocks,
+    prerequisites: filteredPrerequisites,
+  };
 }
 
 export function splitMultiSectionMarkdown(markdown: string): string[] {

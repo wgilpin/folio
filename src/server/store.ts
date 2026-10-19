@@ -22,6 +22,7 @@ import {
   generateBlockId,
   isPrerequisiteBlock,
   parseMarkdownBlocks,
+  sanitizePrerequisitesAndBlock0,
   serializeMarkdownBlocks,
   splitMultiSectionMarkdown,
 } from './markdown.js';
@@ -245,13 +246,22 @@ export class WorkspaceStore {
       suffix += 1;
     }
 
-    const blocks = seedResult.blocks.map((markdown, index) => ({
+    const rawBlocks = seedResult.blocks.map((markdown, index) => ({
       id:
         index === 0 && /^#{1,3}\s*0\b|prerequisites/i.test(markdown)
           ? 'blk_00'
           : generateBlockId(index),
       markdown: markdown.trim(),
     }));
+
+    const { blocks, prerequisites } = sanitizePrerequisitesAndBlock0(
+      rawBlocks,
+      seedResult.prerequisites,
+      {
+        docTitle: seedResult.title.trim(),
+        plannedToc: seedResult.toc,
+      }
+    );
 
     return this.saveDocument(seedResult.title.trim(), blocks, {
       id: docId,
@@ -261,7 +271,7 @@ export class WorkspaceStore {
       filename: `${docId}.md`,
       parentId: null,
       parentBlockId: null,
-      prerequisites: seedResult.prerequisites,
+      prerequisites,
     });
   }
 
@@ -841,7 +851,7 @@ export class WorkspaceStore {
       const childFilename = `${childDocId}.md`;
       const childTitle = item.title.trim();
 
-      const childBlocks: ConceptBlock[] = item.blocks.map(
+      const rawChildBlocks: ConceptBlock[] = item.blocks.map(
         (markdown, index) => ({
           id:
             index === 0 && /^#{1,3}\s*0\b|prerequisites/i.test(markdown)
@@ -851,8 +861,14 @@ export class WorkspaceStore {
         })
       );
 
+      const { blocks: childBlocks, prerequisites: sanitizedPrerequisites } =
+        sanitizePrerequisitesAndBlock0(rawChildBlocks, item.prerequisites, {
+          docTitle: childTitle,
+          plannedToc: item.toc,
+        });
+
       const resolvedPrerequisites =
-        item.prerequisites ??
+        sanitizedPrerequisites ??
         (childBlocks[0]?.id === 'blk_00'
           ? extractPrerequisitesFromBlock0(childBlocks[0].markdown)
           : undefined);
@@ -1131,7 +1147,7 @@ export class WorkspaceStore {
       const childFilename = `${childDocId}.md`;
       const childTitle = item.title.trim();
 
-      const childBlocks: ConceptBlock[] = item.blocks.map(
+      const rawChildBlocks: ConceptBlock[] = item.blocks.map(
         (markdown, index) => ({
           id:
             index === 0 && /^#{1,3}\s*0\b|prerequisites/i.test(markdown)
@@ -1141,9 +1157,15 @@ export class WorkspaceStore {
         })
       );
 
+      const { blocks: childBlocks, prerequisites: sanitizedPrerequisites } =
+        sanitizePrerequisitesAndBlock0(rawChildBlocks, item.prerequisites, {
+          docTitle: childTitle,
+          plannedToc: item.toc,
+        });
+
       const resolvedPrerequisites =
-        item.prerequisites && item.prerequisites.length > 0
-          ? item.prerequisites
+        sanitizedPrerequisites && sanitizedPrerequisites.length > 0
+          ? sanitizedPrerequisites
           : childBlocks[0]?.id === 'blk_00'
             ? extractPrerequisitesFromBlock0(childBlocks[0].markdown)
             : undefined;

@@ -231,6 +231,70 @@ describe('markdown block parser and serializer', () => {
       expect(result[0]).toBe(md);
     });
   });
+
+  describe('sanitizePrerequisitesAndBlock0', () => {
+    it('strips prerequisites and Block 0 bullets that overlap with body section headings or the document title', async () => {
+      const { sanitizePrerequisitesAndBlock0 } = await import('../markdown.js');
+
+      const blocks = [
+        {
+          id: 'blk_00',
+          markdown: [
+            '## 0. Prerequisites & Foundations',
+            '',
+            '- **Basic Geopolitical Alliances & Grand Strategy:** Understanding state competition.',
+            '- **Fundamentals of Social Media Algorithms & Content Delivery:** How feeds rank content.',
+            '- **Reflexive Control:** A Soviet-era psychological doctrine.',
+            '- **Discourse Power (*Huayuquan*):** A strategic Chinese geopolitical concept.',
+          ].join('\n'),
+        },
+        {
+          id: 'blk_02',
+          markdown:
+            '## 1. Technological Architecture: From Static Bots to Agentic Media Ecosystems\n\nAgentic pipelines.',
+        },
+        {
+          id: 'blk_03',
+          markdown:
+            '## 2. Russian Doctrine: Epistemic Chaos, Reflexive Control, and Domestic Fracture\n\nRussian strategy.',
+        },
+        {
+          id: 'blk_04',
+          markdown:
+            '## 3. Chinese Doctrine: Discourse Power, Narrative Laundering, and Structural Dominance\n\nChinese strategy.',
+        },
+      ];
+
+      const { blocks: sanitizedBlocks, prerequisites } =
+        sanitizePrerequisitesAndBlock0(
+          blocks,
+          [
+            'Basic Geopolitical Alliances & Grand Strategy',
+            'Fundamentals of Social Media Algorithms & Content Delivery',
+            'Reflexive Control',
+            'Discourse Power (Huayuquan)',
+          ],
+          {
+            docTitle:
+              'The Evolving Information Battlespace: AI-Driven Misinformation, Mass Media, and Geopolitical Strategy in 2026',
+          }
+        );
+
+      expect(prerequisites).toEqual([
+        'Basic Geopolitical Alliances & Grand Strategy',
+        'Fundamentals of Social Media Algorithms & Content Delivery',
+      ]);
+      expect(sanitizedBlocks[0].markdown).toContain(
+        '**Basic Geopolitical Alliances & Grand Strategy:**'
+      );
+      expect(sanitizedBlocks[0].markdown).toContain(
+        '**Fundamentals of Social Media Algorithms & Content Delivery:**'
+      );
+      expect(sanitizedBlocks[0].markdown).not.toContain('Reflexive Control');
+      expect(sanitizedBlocks[0].markdown).not.toContain('Discourse Power');
+    });
+  });
 });
+
 
 

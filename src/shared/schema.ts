@@ -121,10 +121,32 @@ export const NotebookStateSchema = z.object({
 export type NotebookState = z.infer<typeof NotebookStateSchema>;
 
 export const SeedResultSchema = z.object({
-  title: z.string(),
-  shortTitle: z.string().optional(),
-  blocks: z.array(z.string()).min(4).max(8),
-  prerequisites: z.array(z.string()).optional(),
+  title: z.string().describe('Full chapter header for the reading view'),
+  shortTitle: z
+    .string()
+    .optional()
+    .describe(
+      'Concise 2 to 4 word core topic name omitting subtitles or colons, used for navigation and filenames'
+    ),
+  toc: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Planned Table of Contents: ordered list of numbered body section headings (e.g. "1. ...", "2. ...") that this document itself will explain in blocks[1..N]'
+    ),
+  prerequisites: z
+    .array(z.string())
+    .optional()
+    .describe(
+      '2 to 5 upstream background topics assumed BEFORE reading this document. Must NOT include any topic, doctrine, or concept covered in `toc`.'
+    ),
+  blocks: z
+    .array(z.string())
+    .min(4)
+    .max(8)
+    .describe(
+      'Self-contained Markdown concept blocks: Block 0 is "## Prerequisites & Foundations" (listing only `prerequisites`, never defining concepts taught in `toc`), followed by the body blocks matching `toc`.'
+    ),
 });
 
 export type SeedResult = z.infer<typeof SeedResultSchema>;

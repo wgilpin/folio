@@ -215,6 +215,18 @@ export function formatBoundedContextPrompt(context: BoundedCellContext): string 
   ].join('\n\n');
 }
 
+const TOC_AND_PREREQUISITES_ORDERING_RULES = [
+  'Follow this strict generation order (`title` -> `shortTitle` -> `toc` -> `prerequisites` -> `blocks`):',
+  '1. `title` & `shortTitle`: Generate a clear, descriptive document `title` (faithful to the actual domain of the topic without forcing mathematical framing onto non-mathematical subjects) and a concise `shortTitle` (a 2 to 4 word core topic name omitting subtitles, colons, or qualifying scope clauses like "in Special Relativity", used for navigation and filenames).',
+  '2. `toc`: Plan the Table of Contents first by listing the 3 to 7 numbered body section headings (`"1. ..."`, `"2. ..."`, etc.) that this document will teach in `blocks[1..N]`.',
+  '3. `prerequisites`: Reviewing your planned `toc`, list 2 to 5 concise upstream prerequisite topics that the reader is assumed to know BEFORE reading this document.',
+  '   - CRITICAL NON-OVERLAP RULE: NEVER list a topic, doctrine, or concept in `prerequisites` if you are already dedicating a section in `toc` to explaining it! Do not both label something a prerequisite and also write a section in this document explaining what it is.',
+  '4. `blocks`: Generate 4 to 8 self-contained Markdown concept blocks:',
+  '   - Block 0 (`blocks[0]`) MUST start with `## Prerequisites & Foundations` (or `## Prerequisites & Notation` if the topic is mathematical/quantitative). Its bullet list MUST correspond 1-to-1 with `prerequisites` (briefly noting why each upstream prerequisite is needed here), plus symbol/notation definitions ONLY if mathematical equations are genuinely used later, and a short big-picture framing of the document. NEVER include a "Core Terminology" list in Block 0 that defines concepts, doctrines, or mechanisms taught in the subsequent `toc` sections (`## 1.`, `## 2.`, etc.)—introduce and define those inside their respective body sections.',
+  '   - Body Blocks (`blocks[1..N]`) MUST follow the planned `toc` headings (`## 1. ...`, `## 2. ...`), building step-by-step from intuition to deeper mechanisms, frameworks, historical/actor analysis, case studies, or (only when the topic is inherently quantitative) formal mathematical derivations, calibrating explanation depth to the Learner Profile.',
+  '   - Only include a ```mermaid diagram in a block if a visual diagram genuinely clarifies a structure or flow; most blocks should be clean prose.',
+].join('\n');
+
 export const defaultSeedGenerator: SeedGenerator = async (
   prompt: string,
   options?: SeedGeneratorOptions
@@ -234,10 +246,7 @@ export const defaultSeedGenerator: SeedGenerator = async (
       formatLearnerProfilePrompt(options?.learnerProfile),
       KATEX_MATH_FORMATTING_RULES,
       `Reasoning Effort: ${reasoningEffort}`,
-      'Generate a clear, descriptive document `title` (the full chapter header for the reading view, faithful to the actual domain of the topic without forcing mathematical framing onto non-mathematical subjects), a concise `shortTitle` (a 2 to 4 word core topic name omitting subtitles, colons, or qualifying scope clauses like "in Special Relativity", used for navigation and filenames), a structured `prerequisites` array of 2 to 5 concise prerequisite topic names, and 4 to 8 self-contained Markdown concept blocks exploring the user topic:',
-      '1. The VERY FIRST block (Block 0) MUST start with `## Prerequisites & Foundations` (or `## Prerequisites & Notation` if the topic is mathematical/quantitative). It must list the foundational prerequisites needed to understand this topic (matching `prerequisites`), define key domain concepts or terminology in plain English (and define symbols/notation ONLY if mathematical equations are genuinely used later), and give the intuitive big picture.',
-      '2. Subsequent blocks (`## 1. ...`, `## 2. ...`) should build step-by-step from intuition to deeper mechanisms, frameworks, historical/actor analysis, case studies, or (only when the topic is inherently quantitative) formal mathematical derivations, calibrating explanation depth to the Learner Profile.',
-      '3. Only include a ```mermaid diagram in a block if a visual diagram genuinely clarifies a structure or flow; most blocks should be clean prose.',
+      TOC_AND_PREREQUISITES_ORDERING_RULES,
     ].join('\n'),
     prompt: `Seed a notebook document for the topic: ${prompt}`,
   });
@@ -341,10 +350,8 @@ export const defaultBranchGenerator: BranchGenerator = async ({
       'Generate one or more deep-dive sub-documents in `branches` to thoroughly unpack the sub-topics explored in the chat:',
       '- If the chat focuses on a single topic/concept, return 1 sub-document in `branches`.',
       '- If the user asked about multiple distinct items, topics, or prerequisites in the chat (e.g., pasted 3 prerequisites and asked for explanations of all 3), return N separate sub-documents in `branches` — one dedicated deep-dive sub-document per distinct item!',
-      'For each sub-document in `branches`, provide a clear, descriptive child document `title`, a concise `shortTitle` (a 2 to 4 word core topic name omitting subtitles, colons, or qualifying scope clauses like "in Special Relativity", used for navigation and filenames), a structured `prerequisites` array of 2 to 5 concise prerequisite topic names, and 4 to 8 self-contained Markdown concept blocks:',
-      '1. The VERY FIRST block (Block 0) MUST start with `## Prerequisites & Foundations` (or `## Prerequisites & Notation` if the topic is mathematical/quantitative). It must list the foundational prerequisites needed for this deep dive, define key domain concepts or terminology in plain English (and symbols/notation ONLY if mathematical equations are used), and connect to the parent document context.',
-      '2. Subsequent blocks (`## 1. ...`, `## 2. ...`) should build step-by-step from intuition to deeper mechanisms, analysis, or (when quantitative) full derivation, preserving the insights from the Q&A transcript without referencing "the chat" or "the user".',
-      '3. Only include a ```mermaid diagram in a block if a visual diagram genuinely clarifies a structure or flow; most blocks should be clean prose.',
+      'For each sub-document in `branches`, follow the strict generation order (`title` -> `shortTitle` -> `toc` -> `prerequisites` -> `blocks`), preserving the insights from the Q&A transcript without referencing "the chat" or "the user":',
+      TOC_AND_PREREQUISITES_ORDERING_RULES,
       '',
       formatBoundedContextPrompt(context),
     ].join('\n'),
@@ -471,9 +478,8 @@ export const defaultDocumentBranchGenerator: DocumentBranchGenerator = async ({
       KATEX_MATH_FORMATTING_RULES,
       `Reasoning Effort: ${reasoningEffort}`,
       'Generate one or more deep-dive sub-documents in `branches` to thoroughly unpack the sub-topics explored in the chat:',
-      'For each sub-document in `branches`, provide a clear, descriptive child document `title`, a concise `shortTitle` (2-4 words), a structured `prerequisites` array of 2 to 5 prerequisite topic names, and 4 to 8 self-contained Markdown concept blocks:',
-      '1. Block 0 MUST start with `## Prerequisites & Foundations` (or `## Prerequisites & Notation`).',
-      '2. Subsequent blocks (`## 1. ...`, `## 2. ...`) build step-by-step from intuition to deeper mechanisms or analysis.',
+      'For each sub-document in `branches`, follow the strict generation order (`title` -> `shortTitle` -> `toc` -> `prerequisites` -> `blocks`):',
+      TOC_AND_PREREQUISITES_ORDERING_RULES,
       '',
       formatDocumentContextPrompt(context),
     ].join('\n'),
@@ -482,4 +488,5 @@ export const defaultDocumentBranchGenerator: DocumentBranchGenerator = async ({
 
   return object;
 };
+
 

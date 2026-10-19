@@ -17,8 +17,17 @@ import { SubDocLinkCard } from './SubDocLinkCard.js';
 export function extractPrerequisiteTopicsFromMarkdown(markdown: string): string[] {
   const topics: string[] = [];
   for (const line of markdown.split('\n')) {
-    const match = line.match(/^\s*[-*]\s+(?:\*\*([^*]+)\*\*|([^:\n]+?))\s*(?::|$)/);
-    const candidate = (match?.[1] ?? match?.[2] ?? '').trim();
+    const boldMatch =
+      line.match(/^\s*[-*]\s+\*\*(.+?)\*\*\s*(?:[:—–-].*|$)/) ??
+      line.match(/^\s*[-*]\s+\*\*(.+?[:—–-])\*\*(?:\s+.*|$)/);
+    const fallbackMatch = !boldMatch
+      ? line.match(/^\s*[-*]\s+([^:\n]+?)\s*(?::|$)/)
+      : null;
+    const rawCandidate = boldMatch?.[1] ?? fallbackMatch?.[1] ?? '';
+    const candidate = rawCandidate
+      .replace(/^[*`]+|[*`]+$/g, '')
+      .replace(/[:—–-]+\s*$/, '')
+      .trim();
     if (candidate && !topics.includes(candidate)) {
       topics.push(candidate);
     }
