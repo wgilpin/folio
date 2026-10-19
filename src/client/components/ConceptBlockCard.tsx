@@ -466,28 +466,6 @@ export function ConceptBlockCard({
             : 'none',
       }}
     >
-      <header
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '12px',
-          fontFamily: "'Inter', system-ui, sans-serif",
-          fontSize: '12px',
-          color: '#65635E',
-        }}
-      >
-        <span
-          style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: '12px',
-            color: '#65635E',
-          }}
-        >
-          {block.id}
-        </span>
-      </header>
-
       {isEditingRaw ? (
         <div>
           <textarea
