@@ -184,7 +184,7 @@ describe('Learner Profile & Prerequisite Seeding API (Phase 05 Epic 01)', () => 
     const sidecar = JSON.parse(
       await fs.readFile(path.join(tempDirA, '.folio', 'notebook.json'), 'utf-8')
     );
-    expect(sidecar.documents.index.prerequisites).toEqual([
+    expect(sidecar.documents['hamiltonian-mechanics'].prerequisites).toEqual([
       'Lagrangian Mechanics',
       'Vector Calculus',
     ]);
@@ -231,13 +231,13 @@ describe('Learner Profile & Prerequisite Seeding API (Phase 05 Epic 01)', () => 
       body: JSON.stringify({ prompt: 'Hamiltonian Mechanics' }),
     });
 
-    // Seed prerequisite 'Vector Calculus' from index
+    // Seed prerequisite 'Vector Calculus' from parent document
     const prereqRes = await app.request('/api/prerequisites/seed', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         topic: 'Vector Calculus',
-        parentDocId: 'index',
+        parentDocId: 'hamiltonian-mechanics',
       }),
     });
 
@@ -248,14 +248,14 @@ describe('Learner Profile & Prerequisite Seeding API (Phase 05 Epic 01)', () => 
       id: 'vector-calculus-foundations',
       title: 'Vector Calculus Foundations',
       filename: 'vector-calculus-foundations.md',
-      parentId: 'index',
+      parentId: 'hamiltonian-mechanics',
       parentBlockId: 'blk_00',
       childDocIds: [],
       prerequisites: ['Single-Variable Calculus', 'Linear Algebra'],
     });
-    expect(prereqBody.documents.index.childDocIds).toContain(
-      'vector-calculus-foundations'
-    );
+    expect(
+      prereqBody.documents['hamiltonian-mechanics'].childDocIds
+    ).toContain('vector-calculus-foundations');
     expect(prereqBody.profile.topics['Vector Calculus']).toBe('learning');
 
     // Verify child markdown file exists on disk
@@ -265,9 +265,12 @@ describe('Learner Profile & Prerequisite Seeding API (Phase 05 Epic 01)', () => 
     );
     expect(childMd).toContain('## 1. Scalar and Vector Fields');
 
-    // Verify parent blk_00 in index.md ends with deep dive link
-    const indexMd = await fs.readFile(path.join(tempDirA, 'index.md'), 'utf-8');
-    expect(indexMd).toContain(
+    // Verify parent blk_00 in hamiltonian-mechanics.md ends with deep dive link
+    const parentMd = await fs.readFile(
+      path.join(tempDirA, 'hamiltonian-mechanics.md'),
+      'utf-8'
+    );
+    expect(parentMd).toContain(
       '[→ Deep dive: Vector Calculus Foundations](vector-calculus-foundations.md)'
     );
   });

@@ -162,7 +162,64 @@ export class WorkspaceStore {
     return updated;
   }
 
-  async loadDocument(docId = 'index'): Promise<LoadedDocument> {
+  async resolveDocId(requestedDocId?: string): Promise<string> {
+    const state = await this.loadState();
+    if (requestedDocId && requestedDocId !== 'index') {
+      return requestedDocId;
+    }
+    if (requestedDocId === 'index') {
+      if (state.documents['index']) {
+        return 'index';
+      }
+      try {
+        await fs.access(path.join(this.workspaceDir, 'index.md'));
+        return 'index';
+      } catch {
+        // Fall through to activeDocId / first root doc
+      }
+    }
+    if (state.activeDocId && state.documents[state.activeDocId]) {
+      return state.activeDocId;
+    }
+    const firstRoot = Object.values(state.documents).find(
+      (d) => d.parentId === null
+    );
+    if (firstRoot) {
+      return firstRoot.id;
+    }
+    const firstAny = Object.keys(state.documents)[0];
+    return firstAny ?? 'index';
+  }
+
+  async seedRootDocument(seedResult: SeedResult): Promise<LoadedDocument> {
+    const state = await this.loadState();
+    const baseSlug = slugifyTitle(seedResult.title);
+    let docId = baseSlug;
+    let suffix = 2;
+    while (state.documents[docId]) {
+      docId = `${baseSlug}-${suffix}`;
+      suffix += 1;
+    }
+
+    const blocks = seedResult.blocks.map((markdown, index) => ({
+      id:
+        index === 0 && /^#{1,3}\s*0\b|prerequisites/i.test(markdown)
+          ? 'blk_00'
+          : generateBlockId(index),
+      markdown: markdown.trim(),
+    }));
+
+    return this.saveDocument(seedResult.title.trim(), blocks, {
+      id: docId,
+      filename: `${docId}.md`,
+      parentId: null,
+      parentBlockId: null,
+      prerequisites: seedResult.prerequisites,
+    });
+  }
+
+  async loadDocument(requestedDocId?: string): Promise<LoadedDocument> {
+    const docId = await this.resolveDocId(requestedDocId);
     const state = await this.loadState();
     const settings = this.resolveStateSettings(state);
     const activeChat =
@@ -209,6 +266,11 @@ export class WorkspaceStore {
       state.documents[docId] = docNode;
     }
 
+    if (state.activeDocId !== docId && state.documents[docId]) {
+      state.activeDocId = docId;
+      await this.saveState(state);
+    }
+
     return {
       document: docNode,
       blocks,
@@ -229,6 +291,7 @@ export class WorkspaceStore {
       parentId?: string | null;
       parentBlockId?: string | null;
       prerequisites?: string[];
+      prerequisiteDocIds?: Record<string, string>;
     }
   ): Promise<LoadedDocument> {
     const docId = options?.id ?? 'index';
@@ -244,6 +307,9 @@ export class WorkspaceStore {
         ? extractPrerequisitesFromBlock0(blocks[0].markdown)
         : undefined);
 
+    const resolvedPrerequisiteDocIds =
+      options?.prerequisiteDocIds ?? existing?.prerequisiteDocIds;
+
     const docNode: DocumentNode = {
       id: docId,
       title,
@@ -254,9 +320,14 @@ export class WorkspaceStore {
       ...(resolvedPrerequisites && resolvedPrerequisites.length > 0
         ? { prerequisites: resolvedPrerequisites }
         : {}),
+      ...(resolvedPrerequisiteDocIds &&
+      Object.keys(resolvedPrerequisiteDocIds).length > 0
+        ? { prerequisiteDocIds: resolvedPrerequisiteDocIds }
+        : {}),
     };
 
     state.documents[docId] = docNode;
+    state.activeDocId = docId;
 
     await fs.mkdir(this.workspaceDir, { recursive: true });
     const serialized = serializeMarkdownBlocks(blocks);
@@ -285,7 +356,8 @@ export class WorkspaceStore {
     };
   }
 
-  async getActiveChat(docId = 'index'): Promise<EphemeralChatThread | null> {
+  async getActiveChat(requestedDocId?: string): Promise<EphemeralChatThread | null> {
+    const docId = await this.resolveDocId(requestedDocId);
     const state = await this.loadState();
     if (state.activeChat && state.activeChat.docId === docId) {
       return state.activeChat;
@@ -293,7 +365,8 @@ export class WorkspaceStore {
     return null;
   }
 
-  async getPendingEdits(docId = 'index'): Promise<PendingSuggestedEdit[]> {
+  async getPendingEdits(requestedDocId?: string): Promise<PendingSuggestedEdit[]> {
+    const docId = await this.resolveDocId(requestedDocId);
     const state = await this.loadState();
     return state.pendingEdits.filter((e) => e.docId === docId);
   }
@@ -333,7 +406,8 @@ export class WorkspaceStore {
     return updatedChat;
   }
 
-  async discardChat(docId = 'index', blockId?: string): Promise<null> {
+  async discardChat(requestedDocId?: string, blockId?: string): Promise<null> {
+    const docId = await this.resolveDocId(requestedDocId);
     const state = await this.loadState();
     if (
       !blockId ||
@@ -560,6 +634,7 @@ export class WorkspaceStore {
 
     state.documents[docId] = parentDocNode;
     state.documents[childDocId] = childDocNode;
+    state.activeDocId = childDocId;
     state.activeChat = null;
 
     await fs.mkdir(this.workspaceDir, { recursive: true });
@@ -591,18 +666,50 @@ export class WorkspaceStore {
     topic: string
   ): Promise<LoadedDocument | null> {
     const state = await this.loadState();
-    const normTopic = topic.trim().toLowerCase();
-    const topicSlug = slugifyTitle(topic);
+    const cleanTopic = topic.trim();
+    const parentDoc = state.documents[parentDocId];
+
+    // 1. Check structured prerequisiteDocIds on the parent document or global topicDocIds
+    const mappedDocId =
+      parentDoc?.prerequisiteDocIds?.[cleanTopic] ??
+      state.topicDocIds?.[cleanTopic];
+    if (mappedDocId && state.documents[mappedDocId]) {
+      if (
+        parentDoc &&
+        parentDoc.prerequisiteDocIds?.[cleanTopic] !== mappedDocId
+      ) {
+        parentDoc.prerequisiteDocIds = {
+          ...(parentDoc.prerequisiteDocIds ?? {}),
+          [cleanTopic]: mappedDocId,
+        };
+        if (!parentDoc.childDocIds.includes(mappedDocId)) {
+          parentDoc.childDocIds = [...parentDoc.childDocIds, mappedDocId];
+        }
+        await this.saveState(state);
+      }
+      return this.loadDocument(mappedDocId);
+    }
+
+    // 2. Fallback: check existing child documents by title/slug/keyword overlap and backfill structured map
+    const normTopic = cleanTopic.toLowerCase();
+    const topicSlug = slugifyTitle(cleanTopic);
+    const topicWords = normTopic
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length > 3 && !['with', 'from', 'into', 'that'].includes(w));
 
     const existingDoc = Object.values(state.documents).find((doc) => {
       if (doc.parentId !== parentDocId) return false;
       const normTitle = doc.title.trim().toLowerCase();
+      const wordMatches =
+        topicWords.length >= 2 &&
+        topicWords.every((w) => normTitle.includes(w) || doc.id.includes(w));
       return (
         normTitle === normTopic ||
         normTitle.includes(normTopic) ||
         normTopic.includes(normTitle) ||
         doc.id === topicSlug ||
-        doc.id.includes(topicSlug)
+        doc.id.includes(topicSlug) ||
+        wordMatches
       );
     });
 
@@ -610,12 +717,24 @@ export class WorkspaceStore {
       return null;
     }
 
+    if (parentDoc) {
+      parentDoc.prerequisiteDocIds = {
+        ...(parentDoc.prerequisiteDocIds ?? {}),
+        [cleanTopic]: existingDoc.id,
+      };
+      state.topicDocIds = {
+        ...(state.topicDocIds ?? {}),
+        [cleanTopic]: existingDoc.id,
+      };
+      await this.saveState(state);
+    }
+
     return this.loadDocument(existingDoc.id);
   }
 
   async branchPrerequisiteDocument(
     parentDocId: string,
-    _topic: string,
+    topic: string,
     seedResult: SeedResult
   ): Promise<LoadedDocument> {
     const state = await this.loadState();
@@ -632,7 +751,34 @@ export class WorkspaceStore {
       parentLoaded.blocks.find((b) => b.id === 'blk_00') ??
       parentLoaded.blocks[0];
 
-    return this.branchDocumentFromChat(parentDocId, targetBlock.id, seedResult);
+    const branched = await this.branchDocumentFromChat(
+      parentDocId,
+      targetBlock.id,
+      seedResult
+    );
+
+    const cleanTopic = topic.trim();
+    if (cleanTopic && branched.document) {
+      const updatedState = await this.loadState();
+      const parentNode = updatedState.documents[parentDocId];
+      if (parentNode) {
+        parentNode.prerequisiteDocIds = {
+          ...(parentNode.prerequisiteDocIds ?? {}),
+          [cleanTopic]: branched.document.id,
+        };
+      }
+      updatedState.topicDocIds = {
+        ...(updatedState.topicDocIds ?? {}),
+        [cleanTopic]: branched.document.id,
+      };
+      await this.saveState(updatedState);
+      return {
+        ...branched,
+        documents: updatedState.documents,
+      };
+    }
+
+    return branched;
   }
 
   async acceptPendingEdit(editId: string): Promise<LoadedDocument> {

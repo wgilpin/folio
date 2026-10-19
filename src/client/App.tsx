@@ -198,6 +198,7 @@ export function App(): React.ReactElement {
     nextStatus: TopicFamiliarity
   ) => {
     setProfile((prev) => ({
+      ...prev,
       topics: {
         ...prev.topics,
         [topic]: nextStatus,
@@ -659,9 +660,15 @@ export function App(): React.ReactElement {
                       askCellDisabled={pendingEdits.length > 0}
                       pendingEdit={pendingEdit}
                       childDocuments={childDocs}
+                      documents={documents}
                       prerequisites={
                         block.id === 'blk_00'
                           ? document.prerequisites
+                          : undefined
+                      }
+                      prerequisiteDocIds={
+                        block.id === 'blk_00'
+                          ? document.prerequisiteDocIds
                           : undefined
                       }
                       learnerProfile={profile}

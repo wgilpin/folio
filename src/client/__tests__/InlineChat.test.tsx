@@ -114,9 +114,16 @@ describe('Inline Cell Chat & Discard UI', () => {
     ).toBeInTheDocument();
 
     const block2Card = screen.getByTestId('concept-block-blk_02');
+    const block2Prose = within(block2Card).getByText(
+      /Maps velocities to canonical momenta\./i
+    );
 
-    // Click Ask Cell on blk_02
+    // Click Ask Cell on blk_02 (located at the end of the cell text)
     const askCellBtn = screen.getByRole('button', { name: 'Ask cell blk_02' });
+    expect(
+      block2Prose.compareDocumentPosition(askCellBtn) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
     await user.click(askCellBtn);
 
     // InlineChatDrawer should now be open inside blk_02 with 2px solid #1D4ED8 border
@@ -124,8 +131,9 @@ describe('Inline Cell Chat & Discard UI', () => {
     expect(drawer).toBeInTheDocument();
     expect(block2Card).toHaveStyle({ border: '2px solid #1D4ED8' });
 
-    // Type a question and submit
+    // Message input box receives focus automatically when drawer appears
     const chatInput = within(drawer).getByPlaceholderText(/ask a question about this cell/i);
+    expect(chatInput).toHaveFocus();
     await user.type(chatInput, 'How is conjugate momentum defined?');
     const sendBtn = within(drawer).getByRole('button', { name: /send/i });
     await user.click(sendBtn);

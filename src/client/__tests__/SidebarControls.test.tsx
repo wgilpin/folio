@@ -332,7 +332,9 @@ describe('SidebarControls (Epic 02 — BYOM, Pedagogical Profile & Workspace UI)
     const workspaceInput = screen.getByLabelText(
       'Workspace directory path'
     ) as HTMLInputElement;
-    expect(workspaceInput.value).toBe('/tmp/workspace-a');
+    await waitFor(() => {
+      expect(workspaceInput.value).toBe('/tmp/workspace-a');
+    });
 
     fireEvent.change(workspaceInput, { target: { value: '/tmp/workspace-b' } });
 

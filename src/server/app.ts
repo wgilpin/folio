@@ -100,6 +100,7 @@ export function createApp(options: CreateAppOptions): Hono {
       : undefined);
   const profileStore = new LearnerProfileStore(resolvedProfilePath);
   const knownWorkspaces = new Set<string>([options.workspaceDir]);
+  let workspaceInitialized = false;
   const seedGenerator = options.seedGenerator ?? defaultSeedGenerator;
   const cellChatGenerator =
     options.cellChatGenerator ?? defaultCellChatGenerator;
@@ -109,8 +110,26 @@ export function createApp(options: CreateAppOptions): Hono {
 
   const getDefaultModelId = () => options.modelId ?? getActiveModelId();
 
+  const ensureWorkspaceInitialized = async () => {
+    if (workspaceInitialized) {
+      return;
+    }
+    workspaceInitialized = true;
+    const profile = await profileStore.loadProfile();
+    if (profile.workspaces) {
+      for (const ws of profile.workspaces) {
+        knownWorkspaces.add(ws);
+      }
+    }
+    if (profile.workspaceDir && profile.workspaceDir !== store.workspaceDir) {
+      store = new WorkspaceStore(profile.workspaceDir);
+      knownWorkspaces.add(profile.workspaceDir);
+    }
+  };
+
   app.get('/api/doc', async (c) => {
-    const docId = c.req.query('id') ?? 'index';
+    await ensureWorkspaceInitialized();
+    const docId = c.req.query('id');
     const loaded = await store.loadDocument(docId);
     const settings = await store.getSettings(getDefaultModelId());
     const profile = await profileStore.loadProfile();
@@ -171,6 +190,7 @@ export function createApp(options: CreateAppOptions): Hono {
   });
 
   app.post('/api/prerequisites/seed', async (c) => {
+    await ensureWorkspaceInitialized();
     let rawBody: unknown;
     try {
       rawBody = await c.req.json();
@@ -183,7 +203,7 @@ export function createApp(options: CreateAppOptions): Hono {
       return c.json({ error: 'Prerequisite topic is required' }, 400);
     }
 
-    const parentDocId = parsedReq.data.parentDocId ?? 'index';
+    const parentDocId = await store.resolveDocId(parsedReq.data.parentDocId);
     const pendingEdits = await store.getPendingEdits(parentDocId);
     if (pendingEdits.length > 0) {
       return c.json({ error: 'Resolve pending suggested edits first' }, 409);
@@ -259,6 +279,7 @@ export function createApp(options: CreateAppOptions): Hono {
   });
 
   app.put('/api/settings', async (c) => {
+    await ensureWorkspaceInitialized();
     let rawBody: unknown;
     try {
       rawBody = await c.req.json();
@@ -282,6 +303,7 @@ export function createApp(options: CreateAppOptions): Hono {
   });
 
   app.get('/api/workspaces', async (c) => {
+    await ensureWorkspaceInitialized();
     return c.json({
       workspaceDir: store.workspaceDir,
       workspaces: Array.from(knownWorkspaces),
@@ -289,6 +311,7 @@ export function createApp(options: CreateAppOptions): Hono {
   });
 
   app.post('/api/workspaces/switch', async (c) => {
+    await ensureWorkspaceInitialized();
     let rawBody: unknown;
     try {
       rawBody = await c.req.json();
@@ -305,10 +328,18 @@ export function createApp(options: CreateAppOptions): Hono {
     await fs.mkdir(targetDir, { recursive: true });
     store = new WorkspaceStore(targetDir);
     knownWorkspaces.add(targetDir);
+    const profile = await profileStore.setWorkspaceDir(
+      targetDir,
+      Array.from(knownWorkspaces)
+    );
+    if (profile.workspaces) {
+      for (const ws of profile.workspaces) {
+        knownWorkspaces.add(ws);
+      }
+    }
 
-    const loaded = await store.loadDocument('index');
+    const loaded = await store.loadDocument();
     const settings = await store.getSettings(getDefaultModelId());
-    const profile = await profileStore.loadProfile();
 
     return c.json({
       document: loaded.document,
@@ -326,6 +357,7 @@ export function createApp(options: CreateAppOptions): Hono {
   });
 
   app.post('/api/doc/seed', async (c) => {
+    await ensureWorkspaceInitialized();
     let rawBody: unknown;
     try {
       rawBody = await c.req.json();
@@ -351,19 +383,8 @@ export function createApp(options: CreateAppOptions): Hono {
             : {}),
         })
       );
-      const blocks = seedResult.blocks.map((markdown, index) => ({
-        id:
-          index === 0 && /^#{1,3}\s*0\b|prerequisites/i.test(markdown)
-            ? 'blk_00'
-            : generateBlockId(index),
-        markdown: markdown.trim(),
-      }));
 
-      const saved = await store.saveDocument(seedResult.title.trim(), blocks, {
-        id: 'index',
-        filename: 'index.md',
-        prerequisites: seedResult.prerequisites,
-      });
+      const saved = await store.seedRootDocument(seedResult);
 
       return c.json({
         document: saved.document,
@@ -386,6 +407,7 @@ export function createApp(options: CreateAppOptions): Hono {
   });
 
   app.put('/api/blocks/:id', async (c) => {
+    await ensureWorkspaceInitialized();
     const blockId = c.req.param('id');
     let rawBody: unknown;
     try {
@@ -400,10 +422,11 @@ export function createApp(options: CreateAppOptions): Hono {
     }
 
     try {
+      const docId = await store.resolveDocId(parsedReq.data.docId);
       const saved = await store.updateBlock(
         blockId,
         parsedReq.data.markdown,
-        parsedReq.data.docId ?? 'index'
+        docId
       );
       const settings = await store.getSettings(getDefaultModelId());
       const profile = await profileStore.loadProfile();
@@ -430,6 +453,7 @@ export function createApp(options: CreateAppOptions): Hono {
   });
 
   app.post('/api/blocks/:id/split', async (c) => {
+    await ensureWorkspaceInitialized();
     const blockId = c.req.param('id');
     let rawBody: unknown = {};
     try {
@@ -447,9 +471,10 @@ export function createApp(options: CreateAppOptions): Hono {
     }
 
     try {
+      const docId = await store.resolveDocId(parsedReq.data.docId);
       const saved = await store.splitBlock(blockId, {
         offset: parsedReq.data.offset,
-        docId: parsedReq.data.docId ?? 'index',
+        docId,
       });
       const settings = await store.getSettings(getDefaultModelId());
       const profile = await profileStore.loadProfile();
@@ -476,6 +501,7 @@ export function createApp(options: CreateAppOptions): Hono {
   });
 
   app.post('/api/blocks/:id/merge', async (c) => {
+    await ensureWorkspaceInitialized();
     const blockId = c.req.param('id');
     let rawBody: unknown = {};
     try {
@@ -493,10 +519,8 @@ export function createApp(options: CreateAppOptions): Hono {
     }
 
     try {
-      const saved = await store.mergeBlockWithNext(
-        blockId,
-        parsedReq.data.docId ?? 'index'
-      );
+      const docId = await store.resolveDocId(parsedReq.data.docId);
+      const saved = await store.mergeBlockWithNext(blockId, docId);
       const settings = await store.getSettings(getDefaultModelId());
       const profile = await profileStore.loadProfile();
 
@@ -522,8 +546,9 @@ export function createApp(options: CreateAppOptions): Hono {
   });
 
   app.delete('/api/blocks/:id', async (c) => {
+    await ensureWorkspaceInitialized();
     const blockId = c.req.param('id');
-    const docId = c.req.query('docId') ?? 'index';
+    const docId = await store.resolveDocId(c.req.query('docId'));
 
     try {
       const saved = await store.deleteBlock(blockId, docId);
@@ -552,6 +577,7 @@ export function createApp(options: CreateAppOptions): Hono {
   });
 
   app.post('/api/blocks/:id/chat', async (c) => {
+    await ensureWorkspaceInitialized();
     const blockId = c.req.param('id');
     let rawBody: unknown;
     try {
@@ -565,7 +591,7 @@ export function createApp(options: CreateAppOptions): Hono {
       return c.json({ error: 'Chat message is required' }, 400);
     }
 
-    const docId = parsedReq.data.docId ?? 'index';
+    const docId = await store.resolveDocId(parsedReq.data.docId);
     const pendingEdits = await store.getPendingEdits(docId);
     if (pendingEdits.length > 0) {
       return c.json({ error: 'Resolve pending suggested edits first' }, 409);
@@ -611,14 +637,16 @@ export function createApp(options: CreateAppOptions): Hono {
   });
 
   app.delete('/api/blocks/:id/chat', async (c) => {
+    await ensureWorkspaceInitialized();
     const blockId = c.req.param('id');
-    const docId = c.req.query('docId') ?? 'index';
+    const docId = await store.resolveDocId(c.req.query('docId'));
 
     await store.discardChat(docId, blockId);
     return c.json({ activeChat: null });
   });
 
   app.post('/api/blocks/:id/integrate', async (c) => {
+    await ensureWorkspaceInitialized();
     const blockId = c.req.param('id');
     let rawBody: unknown = {};
     try {
@@ -635,7 +663,7 @@ export function createApp(options: CreateAppOptions): Hono {
       return c.json({ error: 'Invalid integrate request' }, 400);
     }
 
-    const docId = parsedReq.data.docId ?? 'index';
+    const docId = await store.resolveDocId(parsedReq.data.docId);
     const pendingEdits = await store.getPendingEdits(docId);
     if (pendingEdits.length > 0) {
       return c.json({ error: 'Resolve pending suggested edits first' }, 409);
@@ -696,6 +724,7 @@ export function createApp(options: CreateAppOptions): Hono {
   });
 
   app.post('/api/blocks/:id/branch', async (c) => {
+    await ensureWorkspaceInitialized();
     const blockId = c.req.param('id');
     let rawBody: unknown = {};
     try {
@@ -712,7 +741,7 @@ export function createApp(options: CreateAppOptions): Hono {
       return c.json({ error: 'Invalid branch request' }, 400);
     }
 
-    const docId = parsedReq.data.docId ?? 'index';
+    const docId = await store.resolveDocId(parsedReq.data.docId);
     const pendingEdits = await store.getPendingEdits(docId);
     if (pendingEdits.length > 0) {
       return c.json({ error: 'Resolve pending suggested edits first' }, 409);

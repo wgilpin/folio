@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../../shared/schema.js';
 import { renderMarkdownWithMath } from './ConceptBlockCard.js';
 
@@ -28,6 +28,11 @@ export function InlineChatDrawer({
   onDiscard,
 }: InlineChatDrawerProps): React.ReactElement {
   const [input, setInput] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   const busy = isSending || isIntegrating || isBranching;
 
@@ -149,6 +154,8 @@ export function InlineChatDrawer({
         }}
       >
         <input
+          ref={inputRef}
+          autoFocus
           type="text"
           aria-label={`Question for ${blockId}`}
           placeholder="Ask a question about this cell..."

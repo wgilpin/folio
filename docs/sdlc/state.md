@@ -1,7 +1,7 @@
 # SDLC state
 
 Project: folio
-Updated: 2026-10-18
+Updated: 2026-10-19
 
 ## Stack
 
@@ -39,8 +39,12 @@ Updated: 2026-10-18
 - [x] 05-learner-profile-prerequisites — done
   - [x] epic-01-learner-profile-and-prereq-seed-api — merged 2026-10-18
   - [x] epic-02-prerequisite-chips-ui — merged 2026-10-18
+- [ ] 06-library-index-and-search — pending
+- [ ] 07-central-ability-record-and-cell-done — pending
 
 ## Notes for a fresh session
 
 - Initial exploration notes and red-team findings live in `docs/initial-concept.md`.
 - Phase 05 covers the global Learner Profile (`~/.folio/profile.json` across workspaces) and interactive Block 0 Prerequisite Chips (`↳ Seed Prerequisite` + `✓ I know this`).
+- Phase 06 covers migrating `.folio/notebook.json` to `.folio/library.sqlite`, the auto-generated `README.md` hierarchical library index for external readers, full-text and semantic search across Concept Blocks, and agent pre-flight deduplication/cross-linking.
+- Phase 07 covers the unified central Learner Ability Record (combining self-supplied background, standing learning instructions, and engaged sources/topics) and a non-hiding **Done** check-off status on Concept Blocks.

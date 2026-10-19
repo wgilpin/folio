@@ -51,3 +51,26 @@ Folio builds from a single-document tracer bullet (Phase 01) into the core singl
 **Not in this phase:** Cloud sync, multi-user accounts, persistent chat histories, or code execution kernels.
 
 **Depends on:** Phase 01, Phase 02, Phase 03, Phase 04
+
+## Phase 06 — Library Index (`README.md`), Full-Text & Semantic Search, and Agent Topic Deduplication
+
+**Goal:** Migrate growing tree/topic/prerequisite graph metadata from monolithic `.folio/notebook.json` into a scalable local SQLite store (`.folio/library.sqlite`), maintain an auto-generated hierarchical `README.md` index on disk for external human readers, index all Concept Blocks and documents for instant full-text and semantic search, and equip the seed/branch/prerequisite generators with library-wide retrieval so the agent reuses and cross-links existing expansions instead of duplicating topics.
+Issue ISS-2: Add hierarchical topic index (`README.md`), full-text search, semantic search, and agent topic deduplication across the root library folder.
+Issue ISS-3: Replace monolithic `.folio/notebook.json` with a scalable local database (`.folio/library.sqlite`) as document trees and prerequisite graphs grow.
+
+**Works after this phase:** Opening the root folder in GitHub, Obsidian, or any Markdown viewer presents a clean hierarchical `README.md` map of all topics and sub-documents; pressing search inside Folio finds blocks and documents by keyword, LaTeX notation, or semantic similarity; and seeding or branching a topic automatically detects or cross-links existing documents/blocks in your library rather than re-expanding them from scratch.
+
+**Not in this phase:** Cloud sync, multi-user accounts, persistent chat histories, or code execution kernels.
+
+**Depends on:** Phase 01, Phase 02, Phase 03, Phase 04, Phase 05
+
+## Phase 07 — Unified Learner Ability Record & Cell Done Tracking
+
+**Goal:** Consolidate learner context into a single central record of ability (`~/.folio/profile.json` / library store) that combines: (1) user self-supplied background (e.g., *"I did first year Nat Sci (Physical) at Cambridge."*), (2) standing personal learning instructions (e.g., *"I am a visual learner. Explain terms as they are introduced"*), and (3) a ledger of documents, Concept Blocks, and sources actually engaged with—driven by adding a **Done** check-off status to every Concept Block cell (visually marking the cell as completed in place without hiding its content).
+Issue ISS-4: Unified central learner ability record (self-supplied background, learning instructions, and engaged sources) + cell `Done` status toggle.
+
+**Works after this phase:** You can edit your central Learner Ability Record in one place (your academic/technical background, standing pedagogical preferences, and topic/source history), check off individual Concept Blocks as **Done** as you read through a document (keeping the cell visible with a clear completed state and progress count), and have every LLM action (`Seed`, `Ask Cell`, `Integrate`, `Branch Doc`) automatically calibrated by your background, standing instructions, and the specific cells/documents you have completed.
+
+**Not in this phase:** Cloud sync, multi-user accounts, persistent chat histories, or code execution kernels.
+
+**Depends on:** Phase 01, Phase 02, Phase 03, Phase 04, Phase 05, Phase 06

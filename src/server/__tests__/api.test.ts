@@ -41,16 +41,27 @@ describe('Document API routes', () => {
     });
   });
 
-  it('POST /api/doc/seed generates 4-8 blocks and persists index.md and .folio/notebook.json', async () => {
-    const seedGenerator = vi.fn().mockResolvedValue({
-      title: 'Hamiltonian Mechanics',
-      blocks: [
-        '## 1. Phase Space Coordinates\n\nGeneralized coordinates $q$ and momenta $p$ span phase space.',
-        '## 2. The Hamiltonian Function\n\nThe total energy $H(q, p)$ governs system evolution.\n\n```mermaid\nflowchart LR\n  L["Lagrangian"] --> H["Hamiltonian"]\n```',
-        '## 3. Canonical Equations\n\nTime derivatives follow $\\dot{q} = \\partial H / \\partial p$ and $\\dot{p} = -\\partial H / \\partial q$.',
-        '## 4. Liouville Theorem\n\nPhase space volume is conserved along trajectories.',
-      ],
-    });
+  it('POST /api/doc/seed generates 4-8 blocks and persists <slug>.md and .folio/notebook.json without overwriting previous topics', async () => {
+    const seedGenerator = vi
+      .fn()
+      .mockResolvedValueOnce({
+        title: 'Hamiltonian Mechanics',
+        blocks: [
+          '## 1. Phase Space Coordinates\n\nGeneralized coordinates $q$ and momenta $p$ span phase space.',
+          '## 2. The Hamiltonian Function\n\nThe total energy $H(q, p)$ governs system evolution.\n\n```mermaid\nflowchart LR\n  L["Lagrangian"] --> H["Hamiltonian"]\n```',
+          '## 3. Canonical Equations\n\nTime derivatives follow $\\dot{q} = \\partial H / \\partial p$ and $\\dot{p} = -\\partial H / \\partial q$.',
+          '## 4. Liouville Theorem\n\nPhase space volume is conserved along trajectories.',
+        ],
+      })
+      .mockResolvedValueOnce({
+        title: 'General Relativity',
+        blocks: [
+          '## 1. Equivalence Principle\n\nLocal inertial frames.',
+          '## 2. Metric Tensor\n\nSpacetime interval $ds^2 = g_{\\mu\\nu} dx^\\mu dx^\\nu$.',
+          '## 3. Geodesic Equation\n\nPaths of extremal proper time.',
+          '## 4. Einstein Field Equations\n\n$G_{\\mu\\nu} = 8\\pi G T_{\\mu\\nu}$.',
+        ],
+      });
 
     const app = createApp({
       workspaceDir: tempDir,
@@ -75,9 +86,9 @@ describe('Document API routes', () => {
 
     const body = await res.json();
     expect(body.document).toEqual({
-      id: 'index',
+      id: 'hamiltonian-mechanics',
       title: 'Hamiltonian Mechanics',
-      filename: 'index.md',
+      filename: 'hamiltonian-mechanics.md',
       parentId: null,
       parentBlockId: null,
       childDocIds: [],
@@ -91,16 +102,40 @@ describe('Document API routes', () => {
       { level: 2, text: '4. Liouville Theorem', blockId: 'blk_04' },
     ]);
 
-    const indexMd = await fs.readFile(path.join(tempDir, 'index.md'), 'utf-8');
-    expect(indexMd).toContain('<!-- folio:block id="blk_01" -->');
-    expect(indexMd).toContain('## 2. The Hamiltonian Function');
+    const firstTopicMd = await fs.readFile(
+      path.join(tempDir, 'hamiltonian-mechanics.md'),
+      'utf-8'
+    );
+    expect(firstTopicMd).toContain('<!-- folio:block id="blk_01" -->');
+    expect(firstTopicMd).toContain('## 2. The Hamiltonian Function');
+
+    // Seed a second root topic in the same root folder and verify both coexist
+    const res2 = await app.request('/api/doc/seed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: 'General Relativity' }),
+    });
+    expect(res2.status).toBe(200);
+    const body2 = await res2.json();
+    expect(body2.document.id).toBe('general-relativity');
+    expect(body2.document.filename).toBe('general-relativity.md');
+    expect(Object.keys(body2.documents).sort()).toEqual([
+      'general-relativity',
+      'hamiltonian-mechanics',
+    ]);
 
     const sidecarRaw = await fs.readFile(
       path.join(tempDir, '.folio', 'notebook.json'),
       'utf-8'
     );
     const sidecar = JSON.parse(sidecarRaw);
-    expect(sidecar.documents.index.title).toBe('Hamiltonian Mechanics');
+    expect(sidecar.documents['hamiltonian-mechanics'].title).toBe(
+      'Hamiltonian Mechanics'
+    );
+    expect(sidecar.documents['general-relativity'].title).toBe(
+      'General Relativity'
+    );
+    expect(sidecar.activeDocId).toBe('general-relativity');
   });
 
   it('PUT /api/blocks/:id updates block markdown on disk and refreshes ToC', async () => {
@@ -150,12 +185,15 @@ describe('Document API routes', () => {
       { level: 2, text: '4. Liouville Theorem', blockId: 'blk_04' },
     ]);
 
-    const indexMd = await fs.readFile(path.join(tempDir, 'index.md'), 'utf-8');
-    expect(indexMd).toContain('## 1. Symplectic Phase Space');
-    expect(indexMd).not.toContain('## 1. Phase Space Coordinates');
+    const topicMd = await fs.readFile(
+      path.join(tempDir, 'hamiltonian-mechanics.md'),
+      'utf-8'
+    );
+    expect(topicMd).toContain('## 1. Symplectic Phase Space');
+    expect(topicMd).not.toContain('## 1. Phase Space Coordinates');
   });
 
-  it('POST /api/blocks/:id/split, POST /api/blocks/:id/merge, and DELETE /api/blocks/:id mutate blocks in index.md', async () => {
+  it('POST /api/blocks/:id/split, POST /api/blocks/:id/merge, and DELETE /api/blocks/:id mutate blocks in <slug>.md', async () => {
     const seedGenerator = vi.fn().mockResolvedValue({
       title: 'Hamiltonian Mechanics',
       blocks: [
@@ -195,8 +233,11 @@ describe('Document API routes', () => {
     expect(splitBody.blocks[1].markdown).toBe('Second paragraph on canonical momenta.');
 
     const secondBlockId = splitBody.blocks[1].id as string;
-    let indexMd = await fs.readFile(path.join(tempDir, 'index.md'), 'utf-8');
-    expect(indexMd).toContain(`<!-- folio:block id="${secondBlockId}" -->`);
+    let topicMd = await fs.readFile(
+      path.join(tempDir, 'hamiltonian-mechanics.md'),
+      'utf-8'
+    );
+    expect(topicMd).toContain(`<!-- folio:block id="${secondBlockId}" -->`);
 
     // 2. Merge blk_01 with the newly split secondBlockId
     const mergeRes = await app.request('/api/blocks/blk_01/merge', {
@@ -211,8 +252,11 @@ describe('Document API routes', () => {
     expect(mergeBody.blocks[0].markdown).toContain('First paragraph on coordinates.');
     expect(mergeBody.blocks[0].markdown).toContain('Second paragraph on canonical momenta.');
 
-    indexMd = await fs.readFile(path.join(tempDir, 'index.md'), 'utf-8');
-    expect(indexMd).not.toContain(`<!-- folio:block id="${secondBlockId}" -->`);
+    topicMd = await fs.readFile(
+      path.join(tempDir, 'hamiltonian-mechanics.md'),
+      'utf-8'
+    );
+    expect(topicMd).not.toContain(`<!-- folio:block id="${secondBlockId}" -->`);
 
     // 3. Delete blk_02
     const deleteRes = await app.request('/api/blocks/blk_02', {
@@ -232,8 +276,11 @@ describe('Document API routes', () => {
       { level: 2, text: '4. Liouville Theorem', blockId: 'blk_04' },
     ]);
 
-    indexMd = await fs.readFile(path.join(tempDir, 'index.md'), 'utf-8');
-    expect(indexMd).not.toContain('<!-- folio:block id="blk_02" -->');
+    topicMd = await fs.readFile(
+      path.join(tempDir, 'hamiltonian-mechanics.md'),
+      'utf-8'
+    );
+    expect(topicMd).not.toContain('<!-- folio:block id="blk_02" -->');
   });
 });
 

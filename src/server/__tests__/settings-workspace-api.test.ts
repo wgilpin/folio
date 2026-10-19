@@ -285,5 +285,24 @@ describe('BYOM Settings & Workspace Switcher API (Epic 01)', () => {
     expect(switchBackBody.workspaceDir).toBe(workspaceA);
     expect(switchBackBody.document.title).toBe('Topic: Workspace A Notebook');
     expect(switchBackBody.modelId).toBe('anthropic:claude-opus-4-6');
+
+    // Switch to workspaceB and verify a newly created app instance sharing the same profilePath boots directly into workspaceB
+    const sharedProfilePath = path.join(workspaceA, '.folio', 'profile.json');
+    await app.request('/api/workspaces/switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspaceDir: workspaceB }),
+    });
+
+    const restartedApp = createApp({
+      workspaceDir: workspaceA,
+      profilePath: sharedProfilePath,
+      modelId: 'anthropic:claude-opus-4-6',
+    });
+    const restartedRes = await restartedApp.request('/api/doc');
+    expect(restartedRes.status).toBe(200);
+    const restartedBody = await restartedRes.json();
+    expect(restartedBody.workspaceDir).toBe(workspaceB);
+    expect(restartedBody.document.title).toBe('Topic: Workspace B Notebook');
   });
 });

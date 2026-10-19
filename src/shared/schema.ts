@@ -21,6 +21,8 @@ export type TopicFamiliarity = z.infer<typeof TopicFamiliaritySchema>;
 
 export const LearnerProfileSchema = z.object({
   topics: z.record(z.string(), TopicFamiliaritySchema).default({}),
+  workspaceDir: z.string().optional(),
+  workspaces: z.array(z.string()).optional(),
 });
 
 export type LearnerProfile = z.infer<typeof LearnerProfileSchema>;
@@ -33,6 +35,7 @@ export const DocumentNodeSchema = z.object({
   parentBlockId: z.string().nullable(),
   childDocIds: z.array(z.string()),
   prerequisites: z.array(z.string()).optional(),
+  prerequisiteDocIds: z.record(z.string(), z.string()).optional(),
 });
 
 export type DocumentNode = z.infer<typeof DocumentNodeSchema>;
@@ -91,6 +94,8 @@ export const NotebookStateSchema = z.object({
   pendingEdits: z.array(PendingSuggestedEditSchema).default([]),
   activeChat: EphemeralChatThreadSchema.nullable().optional(),
   settings: NotebookSettingsSchema.optional(),
+  activeDocId: z.string().optional(),
+  topicDocIds: z.record(z.string(), z.string()).optional(),
 });
 
 export type NotebookState = z.infer<typeof NotebookStateSchema>;

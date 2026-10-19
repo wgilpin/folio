@@ -48,4 +48,24 @@ export class LearnerProfileStore {
     await this.saveProfile(profile);
     return profile;
   }
+
+  async setWorkspaceDir(
+    workspaceDir: string,
+    workspaces?: string[]
+  ): Promise<LearnerProfile> {
+    const cleanDir = workspaceDir.trim();
+    if (!cleanDir) {
+      throw new Error('Workspace directory is required');
+    }
+    const profile = await this.loadProfile();
+    profile.workspaceDir = cleanDir;
+    const merged = new Set<string>([
+      ...(profile.workspaces ?? []),
+      ...(workspaces ?? []),
+      cleanDir,
+    ]);
+    profile.workspaces = Array.from(merged);
+    await this.saveProfile(profile);
+    return profile;
+  }
 }

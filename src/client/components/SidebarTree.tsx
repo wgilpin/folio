@@ -54,6 +54,9 @@ export function SidebarTree({
   const [workspaceInput, setWorkspaceInput] = useState<string>(workspaceDir);
   const [customPromptDraft, setCustomPromptDraft] =
     useState<string>(effectiveCustomPrompt);
+  const [collapsedDocIds, setCollapsedDocIds] = useState<Record<string, boolean>>(
+    {}
+  );
 
   useEffect(() => {
     setWorkspaceInput(workspaceDir);
@@ -75,11 +78,19 @@ export function SidebarTree({
       ? [document]
       : [];
 
+  const toggleDocCollapse = (docId: string) => {
+    setCollapsedDocIds((prev) => ({
+      ...prev,
+      [docId]: !prev[docId],
+    }));
+  };
+
   const renderDocTree = (docNode: DocumentNode, depth: number): React.ReactElement => {
     const isActive = document?.id === docNode.id;
     const children = docNode.childDocIds
       .map((childId) => documents[childId])
       .filter((c): c is DocumentNode => Boolean(c));
+    const isBranchCollapsed = Boolean(collapsedDocIds[docNode.id]);
 
     return (
       <li
@@ -90,29 +101,59 @@ export function SidebarTree({
           padding: 0,
         }}
       >
-        <button
-          type="button"
-          aria-label={`Open document ${docNode.title}`}
-          onClick={() => onSelectDocument?.(docNode.id)}
+        <div
           style={{
-            width: '100%',
-            textAlign: 'left',
-            padding: '8px 12px',
-            paddingLeft: `${12 + depth * 14}px`,
-            backgroundColor: isActive ? '#FFFFFF' : 'transparent',
-            border: isActive ? '1px solid #E4DFD7' : '1px solid transparent',
-            borderRadius: '6px',
-            fontFamily: "'Inter', system-ui, sans-serif",
-            fontSize: '13px',
-            fontWeight: isActive ? 600 : 400,
-            color: isActive ? '#18181B' : '#65635E',
-            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '2px',
             marginBottom: '4px',
+            paddingLeft: `${depth * 14}px`,
           }}
         >
-          {depth > 0 ? `↳ ${docNode.title}` : docNode.title}
-        </button>
-        {children.length > 0 && (
+          {children.length > 0 && (
+            <button
+              type="button"
+              aria-label={
+                isBranchCollapsed
+                  ? `Expand children of ${docNode.title}`
+                  : `Collapse children of ${docNode.title}`
+              }
+              onClick={() => toggleDocCollapse(docNode.id)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: '4px',
+                fontSize: '11px',
+                color: '#65635E',
+                cursor: 'pointer',
+                lineHeight: 1,
+              }}
+            >
+              {isBranchCollapsed ? '▸' : '▾'}
+            </button>
+          )}
+          <button
+            type="button"
+            aria-label={`Open document ${docNode.title}`}
+            onClick={() => onSelectDocument?.(docNode.id)}
+            style={{
+              flex: 1,
+              textAlign: 'left',
+              padding: '8px 12px',
+              backgroundColor: isActive ? '#FFFFFF' : 'transparent',
+              border: isActive ? '1px solid #E4DFD7' : '1px solid transparent',
+              borderRadius: '6px',
+              fontFamily: "'Inter', system-ui, sans-serif",
+              fontSize: '13px',
+              fontWeight: isActive ? 600 : 400,
+              color: isActive ? '#18181B' : '#65635E',
+              cursor: 'pointer',
+            }}
+          >
+            {depth > 0 ? `↳ ${docNode.title}` : docNode.title}
+          </button>
+        </div>
+        {children.length > 0 && !isBranchCollapsed && (
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {children.map((child) => renderDocTree(child, depth + 1))}
           </ul>
@@ -233,7 +274,7 @@ export function SidebarTree({
               marginBottom: '8px',
             }}
           >
-            Workspace
+            Root Folder
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <input

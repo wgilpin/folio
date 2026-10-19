@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import katex from 'katex';
 import { marked } from 'marked';
 import type {
@@ -133,7 +133,9 @@ export interface ConceptBlockCardProps {
   isChatLocked?: boolean;
   pendingEdit?: PendingSuggestedEdit | null;
   childDocuments?: DocumentNode[];
+  documents?: Record<string, DocumentNode>;
   prerequisites?: string[];
+  prerequisiteDocIds?: Record<string, string>;
   learnerProfile?: LearnerProfile;
   seedingPrerequisiteTopic?: string | null;
   onSelectDocument?: (docId: string) => void;
@@ -204,6 +206,32 @@ const actionBtnStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
+const iconBtnStyle: React.CSSProperties = {
+  ...actionBtnStyle,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '28px',
+  height: '28px',
+  padding: 0,
+};
+
+const overflowMenuItemStyle: React.CSSProperties = {
+  fontFamily: "'Inter', system-ui, sans-serif",
+  fontSize: '12px',
+  padding: '6px 10px',
+  borderRadius: '4px',
+  border: 'none',
+  backgroundColor: 'transparent',
+  color: '#18181B',
+  cursor: 'pointer',
+  textAlign: 'left',
+  width: '100%',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '6px',
+};
+
 export function ConceptBlockCard({
   block,
   canMerge = true,
@@ -217,7 +245,9 @@ export function ConceptBlockCard({
   isChatLocked = false,
   pendingEdit = null,
   childDocuments = [],
+  documents = {},
   prerequisites,
+  prerequisiteDocIds,
   learnerProfile,
   seedingPrerequisiteTopic = null,
   onSelectDocument,
@@ -237,10 +267,41 @@ export function ConceptBlockCard({
 }: ConceptBlockCardProps): React.ReactElement {
   const [isEditingRaw, setIsEditingRaw] = useState(false);
   const [draftMarkdown, setDraftMarkdown] = useState(block.markdown);
+  const [isOverflowOpen, setIsOverflowOpen] = useState(false);
+  const overflowRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setDraftMarkdown(block.markdown);
   }, [block.markdown]);
+
+  useEffect(() => {
+    if (!isOverflowOpen) {
+      return;
+    }
+
+    const handleMouseDown = (event: MouseEvent) => {
+      if (
+        overflowRef.current &&
+        event.target instanceof Node &&
+        !overflowRef.current.contains(event.target)
+      ) {
+        setIsOverflowOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOverflowOpen(false);
+      }
+    };
+
+    globalThis.document?.addEventListener('mousedown', handleMouseDown);
+    globalThis.document?.addEventListener('keydown', handleEscape);
+    return () => {
+      globalThis.document?.removeEventListener('mousedown', handleMouseDown);
+      globalThis.document?.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOverflowOpen]);
 
   const renderedMarkdown =
     childDocuments.length > 0
@@ -256,6 +317,59 @@ export function ConceptBlockCard({
         ? prerequisites
         : extractPrerequisiteTopicsFromMarkdown(block.markdown)
       : [];
+
+  const resolvePrerequisiteDoc = (topic: string): DocumentNode | undefined => {
+    const cleanTopic = topic.trim();
+    const mappedId = prerequisiteDocIds?.[cleanTopic];
+    if (mappedId) {
+      const fromMap =
+        documents[mappedId] ??
+        childDocuments.find((doc) => doc.id === mappedId);
+      if (fromMap) {
+        return fromMap;
+      }
+    }
+
+    const normTopic = cleanTopic.toLowerCase();
+    const hyphenTopic = normTopic
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    const underscoreTopic = normTopic
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    const topicWords = normTopic
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length > 3 && !['with', 'from', 'into', 'that'].includes(w));
+
+    return childDocuments.find((doc) => {
+      const normTitle = doc.title.trim().toLowerCase();
+      const normId = doc.id.trim().toLowerCase();
+      const wordMatches =
+        topicWords.length >= 2 &&
+        topicWords.every((w) => normTitle.includes(w) || normId.includes(w));
+      return (
+        normTitle === normTopic ||
+        normTitle.includes(normTopic) ||
+        normTopic.includes(normTitle) ||
+        (hyphenTopic.length > 0 && normId.includes(hyphenTopic)) ||
+        (underscoreTopic.length > 0 && normId.includes(underscoreTopic)) ||
+        wordMatches
+      );
+    });
+  };
+
+  const matchedPrerequisiteDocIds = new Set<string>();
+  for (const topic of resolvedPrerequisites) {
+    const matched = resolvePrerequisiteDoc(topic);
+    if (matched) {
+      matchedPrerequisiteDocIds.add(matched.id);
+    }
+  }
+
+  const nonPrerequisiteChildDocs =
+    block.id === 'blk_00'
+      ? childDocuments.filter((doc) => !matchedPrerequisiteDocIds.has(doc.id))
+      : childDocuments;
 
   const handleSave = async () => {
     if (onUpdateMarkdown) {
@@ -325,76 +439,6 @@ export function ConceptBlockCard({
         >
           {block.id}
         </span>
-
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <button
-            type="button"
-            aria-label={`Ask cell ${block.id}`}
-            disabled={isLocked}
-            title={
-              isLocked
-                ? 'Resolve pending suggested edits first'
-                : undefined
-            }
-            onClick={() => onOpenChat?.(block.id)}
-            style={{
-              ...actionBtnStyle,
-              backgroundColor: isChatOpen ? '#1D4ED8' : '#FAF8F5',
-              color: isChatOpen ? '#FFFFFF' : '#1D4ED8',
-              borderColor: '#1D4ED8',
-              fontWeight: 500,
-              opacity: isLocked ? 0.5 : 1,
-              cursor: isLocked ? 'not-allowed' : 'pointer',
-            }}
-          >
-            Ask Cell
-          </button>
-          <button
-            type="button"
-            aria-label={`Edit Markdown for ${block.id}`}
-            onClick={() => {
-              setDraftMarkdown(block.markdown);
-              setIsEditingRaw(true);
-            }}
-            style={actionBtnStyle}
-          >
-            Edit MD
-          </button>
-          <button
-            type="button"
-            aria-label={`Split ${block.id}`}
-            onClick={() => void onSplitBlock?.(block.id)}
-            style={actionBtnStyle}
-          >
-            Split
-          </button>
-          <button
-            type="button"
-            aria-label={`Merge ${block.id}`}
-            disabled={!canMerge}
-            onClick={() => void onMergeBlock?.(block.id)}
-            style={{
-              ...actionBtnStyle,
-              opacity: canMerge ? 1 : 0.5,
-              cursor: canMerge ? 'pointer' : 'not-allowed',
-            }}
-          >
-            Merge
-          </button>
-          <button
-            type="button"
-            aria-label={`Delete ${block.id}`}
-            onClick={() => void onDeleteBlock?.(block.id)}
-            style={{
-              ...actionBtnStyle,
-              backgroundColor: '#FEE2E2',
-              color: '#B91C1C',
-              borderColor: '#FEE2E2',
-            }}
-          >
-            Delete
-          </button>
-        </div>
       </header>
 
       {isEditingRaw ? (
@@ -626,25 +670,7 @@ export function ConceptBlockCard({
                   const status: TopicFamiliarity =
                     learnerProfile?.topics?.[topic] ?? 'unseen';
                   const isKnown = status === 'known';
-                  const normTopic = topic.trim().toLowerCase();
-                  const hyphenTopic = normTopic
-                    .replace(/[^a-z0-9]+/g, '-')
-                    .replace(/^-+|-+$/g, '');
-                  const underscoreTopic = normTopic
-                    .replace(/[^a-z0-9]+/g, '_')
-                    .replace(/^_+|_+$/g, '');
-                  const existingChildDoc = childDocuments.find((doc) => {
-                    const normTitle = doc.title.trim().toLowerCase();
-                    const normId = doc.id.trim().toLowerCase();
-                    return (
-                      normTitle === normTopic ||
-                      normTitle.includes(normTopic) ||
-                      normTopic.includes(normTitle) ||
-                      (hyphenTopic.length > 0 && normId.includes(hyphenTopic)) ||
-                      (underscoreTopic.length > 0 &&
-                        normId.includes(underscoreTopic))
-                    );
-                  });
+                  const existingChildDoc = resolvePrerequisiteDoc(topic);
 
                   return (
                     <div
@@ -745,7 +771,7 @@ export function ConceptBlockCard({
               </div>
             </div>
           )}
-          {childDocuments.map((childDoc) => (
+          {nonPrerequisiteChildDocs.map((childDoc) => (
             <SubDocLinkCard
               key={childDoc.id}
               childDoc={childDoc}
@@ -754,6 +780,181 @@ export function ConceptBlockCard({
           ))}
         </div>
       )}
+
+      <footer
+        data-testid={`concept-block-actions-${block.id}`}
+        style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: '8px',
+          alignItems: 'center',
+          marginTop: '16px',
+          paddingTop: '12px',
+          borderTop: '1px solid #F3EFEA',
+        }}
+      >
+        <button
+          type="button"
+          aria-label={`Edit Markdown for ${block.id}`}
+          title="Edit Markdown"
+          onClick={() => {
+            setDraftMarkdown(block.markdown);
+            setIsEditingRaw(true);
+          }}
+          style={{
+            ...iconBtnStyle,
+            backgroundColor: isEditingRaw ? '#18181B' : '#FAF8F5',
+            color: isEditingRaw ? '#FFFFFF' : '#65635E',
+            borderColor: isEditingRaw ? '#18181B' : '#E4DFD7',
+          }}
+        >
+          <svg
+            aria-hidden="true"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+          </svg>
+        </button>
+
+        <button
+          type="button"
+          aria-label={`Ask cell ${block.id}`}
+          disabled={isLocked}
+          title={
+            isLocked
+              ? 'Resolve pending suggested edits first'
+              : 'Ask Cell'
+          }
+          onClick={() => onOpenChat?.(block.id)}
+          style={{
+            ...iconBtnStyle,
+            backgroundColor: isChatOpen ? '#1D4ED8' : '#FAF8F5',
+            color: isChatOpen ? '#FFFFFF' : '#1D4ED8',
+            borderColor: '#1D4ED8',
+            fontWeight: 500,
+            opacity: isLocked ? 0.5 : 1,
+            cursor: isLocked ? 'not-allowed' : 'pointer',
+          }}
+        >
+          <svg
+            aria-hidden="true"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
+
+        <div ref={overflowRef} style={{ position: 'relative' }}>
+          <button
+            type="button"
+            aria-label={`More actions for ${block.id}`}
+            aria-haspopup="menu"
+            aria-expanded={isOverflowOpen}
+            title="More actions"
+            onClick={() => setIsOverflowOpen((prev) => !prev)}
+            style={{
+              ...iconBtnStyle,
+              backgroundColor: isOverflowOpen ? '#F3EFEA' : '#FAF8F5',
+            }}
+          >
+            <svg
+              aria-hidden="true"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="1" />
+              <circle cx="19" cy="12" r="1" />
+              <circle cx="5" cy="12" r="1" />
+            </svg>
+          </button>
+
+          {isOverflowOpen && (
+            <div
+              role="menu"
+              aria-label={`Overflow actions for ${block.id}`}
+              data-testid={`overflow-menu-${block.id}`}
+              style={{
+                position: 'absolute',
+                right: 0,
+                top: 'calc(100% + 4px)',
+                zIndex: 20,
+                minWidth: '120px',
+                backgroundColor: '#FFFFFF',
+                border: '1px solid #E4DFD7',
+                borderRadius: '6px',
+                padding: '4px',
+                boxShadow: '0 4px 12px rgba(24, 24, 27, 0.08)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '2px',
+              }}
+            >
+              <button
+                type="button"
+                aria-label={`Split ${block.id}`}
+                onClick={() => {
+                  setIsOverflowOpen(false);
+                  void onSplitBlock?.(block.id);
+                }}
+                style={overflowMenuItemStyle}
+              >
+                Split
+              </button>
+              <button
+                type="button"
+                aria-label={`Merge ${block.id}`}
+                disabled={!canMerge}
+                onClick={() => {
+                  setIsOverflowOpen(false);
+                  void onMergeBlock?.(block.id);
+                }}
+                style={{
+                  ...overflowMenuItemStyle,
+                  opacity: canMerge ? 1 : 0.5,
+                  cursor: canMerge ? 'pointer' : 'not-allowed',
+                }}
+              >
+                Merge
+              </button>
+              <button
+                type="button"
+                aria-label={`Delete ${block.id}`}
+                onClick={() => {
+                  setIsOverflowOpen(false);
+                  void onDeleteBlock?.(block.id);
+                }}
+                style={{
+                  ...overflowMenuItemStyle,
+                  color: '#B91C1C',
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          )}
+        </div>
+      </footer>
 
       {isChatOpen && (
         <InlineChatDrawer

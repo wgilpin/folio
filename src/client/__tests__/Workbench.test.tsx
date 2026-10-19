@@ -411,17 +411,42 @@ describe('Workbench UI', () => {
       await screen.findByRole('heading', { name: '1. Phase Space Coordinates' })
     ).toBeInTheDocument();
 
-    // 1. Split blk_01
+    // Verify button bar order: 1. Edit MD, 2. Ask Cell, 3. Overflow
+    const actionsFooter = screen.getByTestId('concept-block-actions-blk_01');
+    const topLevelButtons = Array.from(
+      actionsFooter.querySelectorAll(':scope > button, :scope > div > button')
+    );
+    expect(topLevelButtons.map((btn) => btn.getAttribute('aria-label'))).toEqual([
+      'Edit Markdown for blk_01',
+      'Ask cell blk_01',
+      'More actions for blk_01',
+    ]);
+
+    // Verify Edit MD and Ask Cell are icon buttons (contain SVGs, no text)
+    expect(topLevelButtons[0]?.querySelector('svg')).not.toBeNull();
+    expect(topLevelButtons[0]?.textContent).toBe('');
+    expect(topLevelButtons[1]?.querySelector('svg')).not.toBeNull();
+    expect(topLevelButtons[1]?.textContent).toBe('');
+
+    // Split, Merge, Delete are hidden until overflow menu is opened
+    expect(
+      screen.queryByRole('button', { name: 'Split blk_01' })
+    ).not.toBeInTheDocument();
+
+    // 1. Open overflow on blk_01 and Split blk_01
+    await user.click(screen.getByRole('button', { name: 'More actions for blk_01' }));
     await user.click(screen.getByRole('button', { name: 'Split blk_01' }));
     expect(await screen.findByTestId('concept-block-blk_03')).toBeInTheDocument();
 
-    // 2. Merge blk_01
+    // 2. Open overflow on blk_01 and Merge blk_01
+    await user.click(screen.getByRole('button', { name: 'More actions for blk_01' }));
     await user.click(screen.getByRole('button', { name: 'Merge blk_01' }));
     await waitFor(() => {
       expect(screen.queryByTestId('concept-block-blk_03')).not.toBeInTheDocument();
     });
 
-    // 3. Delete blk_02
+    // 3. Open overflow on blk_02 and Delete blk_02
+    await user.click(screen.getByRole('button', { name: 'More actions for blk_02' }));
     await user.click(screen.getByRole('button', { name: 'Delete blk_02' }));
     await waitFor(() => {
       expect(screen.queryByTestId('concept-block-blk_02')).not.toBeInTheDocument();
