@@ -71,12 +71,44 @@ export function computeLineDiff(original: string, proposed: string): DiffLine[] 
   return diff;
 }
 
+export function sanitizeTexForKaTeX(tex: string): string {
+  let cleaned = tex.trim();
+
+  // 1. Convert unsupported \cline{...} to \hline
+  cleaned = cleaned.replace(/\\cline\s*\{[^}]*\}/g, '\\hline');
+
+  // 2. Handle standard \multicolumn{cols}{align}{content} -> extract content
+  cleaned = cleaned.replace(
+    /\\multicolumn\s*\{[^{}]*\}\s*\{[^{}]*\}\s*\{((?:[^{}]|\{[^{}]*\})*)\}/g,
+    '$1'
+  );
+
+  // 3. Handle partially-braced \multicolumn, e.g. \multicolumn 3 c {content}
+  cleaned = cleaned.replace(
+    /\\multicolumn\s*\d+\s*(?:\{[^{}]*\}|\|*[lcr]\|*)\s*\{((?:[^{}]|\{[^{}]*\})*)\}/g,
+    '$1'
+  );
+
+  // 4. Handle unbraced \multicolumn token, e.g. \multicolumn3cText or \multicolumn1c|Text
+  cleaned = cleaned.replace(
+    /\\multicolumn\s*\d+\s*(?:\{[^{}]*\}|\|*[lcr]\|*)\s*/g,
+    ''
+  );
+
+  return cleaned;
+}
+
 export function renderMarkdownWithMath(markdown: string): string {
   const mathTokens: string[] = [];
   const stashMath = (tex: string, displayMode: boolean): string => {
-    const html = katex.renderToString(tex.trim(), {
+    const sanitized = sanitizeTexForKaTeX(tex);
+    const html = katex.renderToString(sanitized, {
       displayMode,
       throwOnError: false,
+      macros: {
+        '\\multicolumn': '#3',
+        '\\cline': '\\hline',
+      },
     });
     const token = `@@FOLIO_MATH_${mathTokens.length}@@`;
     mathTokens.push(html);

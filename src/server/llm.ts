@@ -85,6 +85,14 @@ export function formatLearnerProfilePrompt(profile?: LearnerProfile): string {
 
 export const DEFAULT_MODEL_ID = 'anthropic:claude-opus-4-6';
 
+export const KATEX_MATH_FORMATTING_RULES = [
+  'Math Formatting Guidelines (KaTeX):',
+  '- All math is rendered using KaTeX in the browser.',
+  '- Never use unsupported LaTeX commands such as \\multicolumn or \\cline in matrices or tables.',
+  '- For block/partitioned matrices or tensors with labeled sub-blocks, use partitioned arrays with column dividers (e.g., \\left(\\begin{array}{c|c} ... \\end{array}\\right)), \\overbrace/\\underbrace annotations, or separate labeled equation blocks.',
+  '- Always ensure LaTeX braces and syntax are complete and valid.',
+].join('\n');
+
 export const PEDAGOGICAL_PROFILES: Record<
   PedagogicalProfileId,
   { id: PedagogicalProfileId; label: string; instructions: string }
@@ -195,6 +203,7 @@ export const defaultSeedGenerator: SeedGenerator = async (
       'You are an editorial technical notebook author writing for a curious learner who may not already know the underlying mathematics or specialist notation.',
       pedagogicalPrompt,
       formatLearnerProfilePrompt(options?.learnerProfile),
+      KATEX_MATH_FORMATTING_RULES,
       `Reasoning Effort: ${reasoningEffort}`,
       'Generate a clear document title, a structured `prerequisites` array of 2 to 5 concise prerequisite topic names, and 4 to 8 self-contained Markdown concept blocks exploring the user topic:',
       '1. The VERY FIRST block (Block 0) MUST start with `## 0. Prerequisites & Notation`. It must list the mathematical and conceptual prerequisites needed to understand this topic (matching `prerequisites`), define every symbol or notation that will appear later in plain English, and give the intuitive picture before any equations are used.',
@@ -222,6 +231,7 @@ export const defaultCellChatGenerator: CellChatGenerator = async ({
       'You are an expert technical tutor answering questions about a specific Concept Block (Block N) inside a structured notebook.',
       'Explain concepts clearly, ground equations in intuition, and stay focused on the target block while respecting the surrounding [N-1, N, N+1] context.',
       resolvedPedagogy,
+      KATEX_MATH_FORMATTING_RULES,
       `Reasoning Effort: ${reasoningEffort}`,
       '',
       formatBoundedContextPrompt(context),
@@ -255,6 +265,7 @@ export const defaultIntegrateGenerator: IntegrateGenerator = async ({
     system: [
       'You are an editorial technical notebook integrator.',
       resolvedPedagogy,
+      KATEX_MATH_FORMATTING_RULES,
       `Reasoning Effort: ${reasoningEffort}`,
       'Given a bounded cell context ([N-1, N, N+1] and the Document Table of Contents) and an ephemeral Q&A chat transcript on Target Block N, synthesize the insights from the discussion into clean, self-contained notebook prose:',
       '1. `updatedBlockMarkdown`: Provide the revised Markdown for Target Block N incorporating the clarifications, or `null` if Block N itself does not need changes. IMPORTANT: If Target Block N is the Prerequisites section (`blk_00`), do NOT expand it with explanations, definitions, or derivations—return `null` for `updatedBlockMarkdown` and place the synthesized content into `insertedBlocksMarkdown` to create a new card below. The ONLY time you may expand `blk_00` is when the chat is specifically about adding new prerequisite topics to the prerequisites list.',
@@ -296,6 +307,7 @@ export const defaultBranchGenerator: BranchGenerator = async ({
       'You are an editorial technical notebook author branching dedicated deep-dive sub-documents from an ephemeral Q&A chat on Target Block N.',
       resolvedPedagogy,
       formatLearnerProfilePrompt(learnerProfile),
+      KATEX_MATH_FORMATTING_RULES,
       `Reasoning Effort: ${reasoningEffort}`,
       'Generate one or more deep-dive sub-documents in `branches` to thoroughly unpack the sub-topics explored in the chat:',
       '- If the chat focuses on a single topic/concept, return 1 sub-document in `branches`.',
