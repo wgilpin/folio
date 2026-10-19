@@ -328,4 +328,83 @@ describe('Epic 02: Interactive Block 0 Prerequisite Chips UI', () => {
       );
     });
   });
+
+  it('renders long prerequisite Open button with wrapping styles to avoid layout distortion', async () => {
+    const longTopic =
+      'Fundamentals of Social Media Algorithms & Content Delivery';
+    const docPayload = {
+      document: {
+        id: 'index',
+        title: 'Social Media Dynamics',
+        filename: 'index.md',
+        parentId: null,
+        parentBlockId: null,
+        childDocIds: ['sub_01_algorithms'],
+        prerequisites: [longTopic],
+      },
+      documents: {
+        index: {
+          id: 'index',
+          title: 'Social Media Dynamics',
+          filename: 'index.md',
+          parentId: null,
+          parentBlockId: null,
+          childDocIds: ['sub_01_algorithms'],
+          prerequisites: [longTopic],
+        },
+        sub_01_algorithms: {
+          id: 'sub_01_algorithms',
+          title: longTopic,
+          filename: 'sub_01_algorithms.md',
+          parentId: 'index',
+          parentBlockId: 'blk_00',
+          childDocIds: [],
+          prerequisites: [],
+        },
+      },
+      blocks: [
+        {
+          id: 'blk_00',
+          markdown: `# Social Media Dynamics\n\n## Prerequisites & Context\n- **${longTopic}**: Core algorithms`,
+        },
+      ],
+      toc: [{ level: 1, text: 'Social Media Dynamics', blockId: 'blk_00' }],
+      activeChat: null,
+      pendingEdits: [],
+      modelId: 'anthropic:claude-opus-4-6',
+      profile: {
+        topics: {
+          [longTopic]: 'learning',
+        },
+      },
+    };
+
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === '/api/doc') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => docPayload,
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<App />);
+
+    const chip = await screen.findByTestId(`prereq-chip-${longTopic}`);
+    expect(chip).toBeTruthy();
+    expect(chip.style.flexWrap).toBe('wrap');
+
+    const openBtn = screen.getByRole('button', {
+      name: `Open prerequisite ${longTopic}`,
+    });
+    expect(openBtn.textContent).toBe(`→ Open ${longTopic}`);
+    expect(openBtn.style.whiteSpace).toBe('normal');
+    expect(openBtn.style.maxWidth).toBe('100%');
+    expect(openBtn.style.wordBreak).toBe('break-word');
+  });
 });

@@ -720,7 +720,8 @@ export function ConceptBlockCard({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        gap: '12px',
+                        gap: '8px 12px',
+                        flexWrap: 'wrap',
                         width: '100%',
                         boxSizing: 'border-box',
                         padding: '8px 12px',
@@ -733,7 +734,14 @@ export function ConceptBlockCard({
                         color: '#18181B',
                       }}
                     >
-                      <span style={{ fontWeight: 600, flex: 1, minWidth: 0, textAlign: 'left' }}>
+                      <span
+                        style={{
+                          fontWeight: 600,
+                          flex: '1 1 auto',
+                          minWidth: '160px',
+                          textAlign: 'left',
+                        }}
+                      >
                         {topic}
                       </span>
                       <div
@@ -741,7 +749,9 @@ export function ConceptBlockCard({
                           display: 'flex',
                           alignItems: 'center',
                           gap: '8px',
-                          flexShrink: 0,
+                          flexWrap: 'wrap',
+                          flexShrink: 1,
+                          marginLeft: 'auto',
                         }}
                       >
                         <span
@@ -788,6 +798,11 @@ export function ConceptBlockCard({
                               color: '#1D4ED8',
                               borderColor: '#1D4ED8',
                               fontWeight: 500,
+                              whiteSpace: 'normal',
+                              wordBreak: 'break-word',
+                              textAlign: 'left',
+                              lineHeight: 1.35,
+                              maxWidth: '100%',
                             }}
                           >
                             {`→ Open ${topic}`}
