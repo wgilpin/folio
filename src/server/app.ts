@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import {
   BranchResultSchema,
+  DocumentIntegrateResultSchema,
   IntegrateResultSchema,
   PedagogicalProfileIdSchema,
   ReasoningEffortSchema,
@@ -10,16 +11,22 @@ import {
   TopicFamiliaritySchema,
   type ChatMessage,
 } from '../shared/schema.js';
-import { buildBoundedCellContext } from './context.js';
+import { buildBoundedCellContext, buildDocumentContext } from './context.js';
 import {
   defaultBranchGenerator,
   defaultCellChatGenerator,
+  defaultDocumentBranchGenerator,
+  defaultDocumentChatGenerator,
+  defaultDocumentIntegrateGenerator,
   defaultIntegrateGenerator,
   defaultSeedGenerator,
   getActiveModelId,
   resolvePedagogicalPrompt,
   type BranchGenerator,
   type CellChatGenerator,
+  type DocumentBranchGenerator,
+  type DocumentChatGenerator,
+  type DocumentIntegrateGenerator,
   type IntegrateGenerator,
   type SeedGenerator,
 } from './llm.js';
@@ -35,6 +42,9 @@ export interface CreateAppOptions {
   cellChatGenerator?: CellChatGenerator;
   integrateGenerator?: IntegrateGenerator;
   branchGenerator?: BranchGenerator;
+  documentChatGenerator?: DocumentChatGenerator;
+  documentIntegrateGenerator?: DocumentIntegrateGenerator;
+  documentBranchGenerator?: DocumentBranchGenerator;
   modelId?: string;
 }
 
@@ -109,6 +119,12 @@ export function createApp(options: CreateAppOptions): Hono {
   const integrateGenerator =
     options.integrateGenerator ?? defaultIntegrateGenerator;
   const branchGenerator = options.branchGenerator ?? defaultBranchGenerator;
+  const documentChatGenerator =
+    options.documentChatGenerator ?? defaultDocumentChatGenerator;
+  const documentIntegrateGenerator =
+    options.documentIntegrateGenerator ?? defaultDocumentIntegrateGenerator;
+  const documentBranchGenerator =
+    options.documentBranchGenerator ?? defaultDocumentBranchGenerator;
 
   const getDefaultModelId = () => options.modelId ?? getActiveModelId();
 
@@ -405,6 +421,226 @@ export function createApp(options: CreateAppOptions): Hono {
       const message =
         err instanceof Error ? err.message : 'Failed to seed topic';
       return c.json({ error: message }, 500);
+    }
+  });
+
+  app.post('/api/doc/chat', async (c) => {
+    await ensureWorkspaceInitialized();
+    let rawBody: unknown;
+    try {
+      rawBody = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON request body' }, 400);
+    }
+
+    const parsedReq = ChatRequestSchema.safeParse(rawBody);
+    if (!parsedReq.success) {
+      return c.json({ error: 'Chat message is required' }, 400);
+    }
+
+    const docId = await store.resolveDocId(parsedReq.data.docId);
+    const pendingEdits = await store.getPendingEdits(docId);
+    if (pendingEdits.length > 0) {
+      return c.json({ error: 'Resolve pending suggested edits first' }, 409);
+    }
+
+    try {
+      const context = await buildDocumentContext(store, docId);
+      const existingChat = await store.getActiveChat(docId);
+      const priorMessages: ChatMessage[] =
+        existingChat && existingChat.blockId === null
+          ? existingChat.messages
+          : [];
+
+      const messagesForGenerator: ChatMessage[] = [
+        ...priorMessages,
+        { role: 'user', content: parsedReq.data.message },
+      ];
+      const settings = await store.getSettings(getDefaultModelId());
+
+      const assistantReply = await documentChatGenerator({
+        context,
+        messages: messagesForGenerator,
+        modelId: settings.modelId,
+        reasoningEffort: settings.reasoningEffort,
+        pedagogicalPrompt: resolvePedagogicalPrompt(settings),
+      });
+
+      const activeChat = await store.appendChatMessage(
+        docId,
+        null,
+        settings.modelId,
+        parsedReq.data.message,
+        assistantReply
+      );
+
+      return c.json({ activeChat });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to process document chat';
+      const status = message.includes('not found') ? 404 : 500;
+      return c.json({ error: message }, status);
+    }
+  });
+
+  app.delete('/api/doc/chat', async (c) => {
+    await ensureWorkspaceInitialized();
+    const docId = await store.resolveDocId(c.req.query('docId'));
+    await store.discardChat(docId, null);
+    return c.json({ activeChat: null });
+  });
+
+  app.post('/api/doc/integrate', async (c) => {
+    await ensureWorkspaceInitialized();
+    let rawBody: unknown = {};
+    try {
+      const text = await c.req.text();
+      if (text.trim()) {
+        rawBody = JSON.parse(text);
+      }
+    } catch {
+      return c.json({ error: 'Invalid JSON request body' }, 400);
+    }
+
+    const parsedReq = IntegrateRequestSchema.safeParse(rawBody);
+    if (!parsedReq.success) {
+      return c.json({ error: 'Invalid integrate request' }, 400);
+    }
+
+    const docId = await store.resolveDocId(parsedReq.data.docId);
+    const pendingEdits = await store.getPendingEdits(docId);
+    if (pendingEdits.length > 0) {
+      return c.json({ error: 'Resolve pending suggested edits first' }, 409);
+    }
+
+    const activeChat = await store.getActiveChat(docId);
+    if (
+      !activeChat ||
+      activeChat.blockId !== null ||
+      activeChat.messages.length === 0
+    ) {
+      return c.json(
+        { error: 'No active notebook chat to integrate' },
+        400
+      );
+    }
+
+    try {
+      const context = await buildDocumentContext(store, docId);
+      const settings = await store.getSettings(getDefaultModelId());
+
+      const integrateResult = DocumentIntegrateResultSchema.parse(
+        await documentIntegrateGenerator({
+          context,
+          messages: activeChat.messages,
+          modelId: settings.modelId,
+          reasoningEffort: settings.reasoningEffort,
+          pedagogicalPrompt: resolvePedagogicalPrompt(settings),
+        })
+      );
+
+      const saved = await store.integrateDocumentChat(docId, integrateResult);
+
+      const profile = await profileStore.loadProfile();
+      return c.json({
+        document: saved.document,
+        blocks: saved.blocks,
+        toc: saved.toc,
+        documents: saved.documents,
+        activeChat: saved.activeChat,
+        pendingEdits: saved.pendingEdits,
+        settings,
+        workspaceDir: store.workspaceDir,
+        workspaces: Array.from(knownWorkspaces),
+        profile,
+        modelId: settings.modelId,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to integrate document chat';
+      const status = message.includes('not found') ? 404 : 500;
+      return c.json({ error: message }, status);
+    }
+  });
+
+  app.post('/api/doc/branch', async (c) => {
+    await ensureWorkspaceInitialized();
+    let rawBody: unknown = {};
+    try {
+      const text = await c.req.text();
+      if (text.trim()) {
+        rawBody = JSON.parse(text);
+      }
+    } catch {
+      return c.json({ error: 'Invalid JSON request body' }, 400);
+    }
+
+    const parsedReq = BranchRequestSchema.safeParse(rawBody);
+    if (!parsedReq.success) {
+      return c.json({ error: 'Invalid branch request' }, 400);
+    }
+
+    const docId = await store.resolveDocId(parsedReq.data.docId);
+    const pendingEdits = await store.getPendingEdits(docId);
+    if (pendingEdits.length > 0) {
+      return c.json({ error: 'Resolve pending suggested edits first' }, 409);
+    }
+
+    const activeChat = await store.getActiveChat(docId);
+    if (
+      !activeChat ||
+      activeChat.blockId !== null ||
+      activeChat.messages.length === 0
+    ) {
+      return c.json(
+        { error: 'No active notebook chat to branch' },
+        400
+      );
+    }
+
+    try {
+      const context = await buildDocumentContext(store, docId);
+      const settings = await store.getSettings(getDefaultModelId());
+      const profile = await profileStore.loadProfile();
+
+      const branchResult = BranchResultSchema.parse(
+        await documentBranchGenerator({
+          context,
+          messages: activeChat.messages,
+          modelId: settings.modelId,
+          reasoningEffort: settings.reasoningEffort,
+          pedagogicalPrompt: resolvePedagogicalPrompt(settings),
+          ...(Object.keys(profile.topics).length > 0
+            ? { learnerProfile: profile }
+            : {}),
+        })
+      );
+
+      const created = await store.branchDocumentFromDocChat(
+        docId,
+        branchResult
+      );
+
+      return c.json({
+        document: created.document,
+        blocks: created.blocks,
+        toc: created.toc,
+        documents: created.documents,
+        activeChat: created.activeChat,
+        pendingEdits: created.pendingEdits,
+        settings,
+        workspaceDir: store.workspaceDir,
+        workspaces: Array.from(knownWorkspaces),
+        profile,
+        modelId: settings.modelId,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to branch sub-document';
+      const status = message.includes('not found') ? 404 : 500;
+      return c.json({ error: message }, status);
     }
   });
 

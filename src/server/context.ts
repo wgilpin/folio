@@ -65,3 +65,47 @@ export async function buildBoundedCellContext(
     nextBlock,
   };
 }
+
+export interface DocumentContext {
+  docId: string;
+  title: string;
+  toc: TocItem[];
+  ancestorTocs: AncestorToc[];
+  blocks: ConceptBlock[];
+}
+
+export async function buildDocumentContext(
+  store: WorkspaceStore,
+  docId: string
+): Promise<DocumentContext> {
+  const loaded = await store.loadDocument(docId);
+  if (!loaded.document) {
+    throw new Error(`Document not found: ${docId}`);
+  }
+
+  const ancestorTocs: AncestorToc[] = [];
+  let currentParentId = loaded.document.parentId;
+  const visited = new Set<string>([docId]);
+
+  while (currentParentId && !visited.has(currentParentId)) {
+    visited.add(currentParentId);
+    const parentLoaded = await store.loadDocument(currentParentId);
+    if (!parentLoaded.document) {
+      break;
+    }
+    ancestorTocs.unshift({
+      docId: parentLoaded.document.id,
+      title: parentLoaded.document.title,
+      toc: parentLoaded.toc,
+    });
+    currentParentId = parentLoaded.document.parentId;
+  }
+
+  return {
+    docId: loaded.document.id,
+    title: loaded.document.title,
+    toc: loaded.toc,
+    ancestorTocs,
+    blocks: loaded.blocks,
+  };
+}

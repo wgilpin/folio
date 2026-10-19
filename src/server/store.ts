@@ -6,6 +6,7 @@ import {
   getConciseTitle,
   type BranchResult,
   type ConceptBlock,
+  type DocumentIntegrateResult,
   type DocumentNode,
   type EphemeralChatThread,
   type IntegrateResult,
@@ -449,7 +450,7 @@ export class WorkspaceStore {
 
   async appendChatMessage(
     docId: string,
-    blockId: string,
+    blockId: string | null,
     modelId: string,
     userMessage: string,
     assistantReply: string
@@ -482,11 +483,14 @@ export class WorkspaceStore {
     return updatedChat;
   }
 
-  async discardChat(requestedDocId?: string, blockId?: string): Promise<null> {
+  async discardChat(
+    requestedDocId?: string,
+    blockId?: string | null
+  ): Promise<null> {
     const docId = await this.resolveDocId(requestedDocId);
     const state = await this.loadState();
     if (
-      !blockId ||
+      blockId === undefined ||
       !state.activeChat ||
       (state.activeChat.docId === docId && state.activeChat.blockId === blockId)
     ) {
@@ -979,6 +983,205 @@ export class WorkspaceStore {
       document: createdDocs[0].docNode,
       blocks: createdDocs[0].blocks,
       toc: extractToc(createdDocs[0].blocks),
+      documents: state.documents,
+      activeChat: null,
+      pendingEdits: [],
+      settings: this.resolveStateSettings(state),
+    };
+  }
+
+  async integrateDocumentChat(
+    docId: string,
+    integrateResult: DocumentIntegrateResult
+  ): Promise<LoadedDocument> {
+    const state = await this.loadState();
+    if (state.pendingEdits.some((e) => e.docId === docId)) {
+      throw new Error('Resolve pending suggested edits first');
+    }
+
+    const loaded = await this.loadDocument(docId);
+    if (!loaded.document) {
+      throw new Error(`Document not found: ${docId}`);
+    }
+
+    const existingBlocks = [...loaded.blocks];
+    const blockMap = new Map(existingBlocks.map((b) => [b.id, b]));
+
+    // 1. Stage suggested edits on targeted existing blocks
+    const stagedEdits = [...state.pendingEdits];
+    const stagedTargets = new Set<string>();
+
+    for (const update of integrateResult.updatedBlocks || []) {
+      const targetBlock = blockMap.get(update.blockId);
+      if (!targetBlock) continue;
+      if (stagedTargets.has(targetBlock.id)) continue;
+
+      const proposed = update.updatedMarkdown.trim();
+      if (!proposed || proposed === targetBlock.markdown.trim()) {
+        continue;
+      }
+
+      const editId = this.nextAvailableEditId(stagedEdits);
+      stagedEdits.push({
+        id: editId,
+        docId,
+        blockId: targetBlock.id,
+        originalMarkdown: targetBlock.markdown,
+        proposedMarkdown: proposed,
+        reason: update.reason,
+        sourceBlockId: 'doc',
+      });
+      stagedTargets.add(targetBlock.id);
+    }
+
+    // 2. Append any newly inserted blocks
+    const newBlocks: ConceptBlock[] = [];
+    const expandedInsertedList = (
+      integrateResult.insertedBlocksMarkdown || []
+    ).flatMap((raw) => splitMultiSectionMarkdown(raw));
+
+    for (const rawMarkdown of expandedInsertedList) {
+      const trimmed = rawMarkdown.trim();
+      if (!trimmed) continue;
+      const newId = this.nextAvailableBlockId([
+        ...existingBlocks,
+        ...newBlocks,
+      ]);
+      newBlocks.push({
+        id: newId,
+        markdown: trimmed,
+      });
+    }
+
+    const updatedBlocks = [...existingBlocks, ...newBlocks];
+    if (newBlocks.length > 0) {
+      await fs.mkdir(this.workspaceDir, { recursive: true });
+      await fs.writeFile(
+        path.join(this.workspaceDir, loaded.document.filename),
+        serializeMarkdownBlocks(updatedBlocks),
+        'utf-8'
+      );
+    }
+
+    state.activeChat = null;
+    state.pendingEdits = stagedEdits;
+    await this.saveState(state);
+
+    const toc = extractToc(updatedBlocks);
+    return {
+      document: loaded.document,
+      blocks: updatedBlocks,
+      toc,
+      documents: state.documents,
+      activeChat: null,
+      pendingEdits: stagedEdits.filter((e) => e.docId === docId),
+      settings: this.resolveStateSettings(state),
+    };
+  }
+
+  async branchDocumentFromDocChat(
+    docId: string,
+    branchResult: BranchResult
+  ): Promise<LoadedDocument> {
+    const state = await this.loadState();
+    if (state.pendingEdits.some((e) => e.docId === docId)) {
+      throw new Error('Resolve pending suggested edits first');
+    }
+
+    const parentLoaded = await this.loadDocument(docId);
+    if (!parentLoaded.document) {
+      throw new Error(`Document not found: ${docId}`);
+    }
+
+    const branchItems: SeedResult[] = Array.isArray(branchResult)
+      ? branchResult
+      : 'branches' in branchResult
+        ? branchResult.branches
+        : [branchResult];
+
+    if (branchItems.length === 0) {
+      throw new Error('No branches to create');
+    }
+
+    const parentDocNode: DocumentNode = {
+      ...parentLoaded.document,
+      childDocIds: [...parentLoaded.document.childDocIds],
+    };
+
+    const allocatedDocIds = new Set<string>();
+    const createdDocs: { docNode: DocumentNode; blocks: ConceptBlock[] }[] = [];
+
+    await fs.mkdir(this.workspaceDir, { recursive: true });
+
+    for (const item of branchItems) {
+      const conciseChildTitle = getConciseTitle(item.title, item.shortTitle);
+      const baseSlug = slugifyTitle(conciseChildTitle);
+      let childDocId = baseSlug;
+      let suffix = 2;
+      while (
+        state.documents[childDocId] ||
+        childDocId === docId ||
+        allocatedDocIds.has(childDocId)
+      ) {
+        childDocId = `${baseSlug}-${suffix}`;
+        suffix += 1;
+      }
+      allocatedDocIds.add(childDocId);
+
+      const childFilename = `${childDocId}.md`;
+      const childTitle = item.title.trim();
+
+      const childBlocks: ConceptBlock[] = item.blocks.map(
+        (markdown, index) => ({
+          id:
+            index === 0 && /^#{1,3}\s*0\b|prerequisites/i.test(markdown)
+              ? 'blk_00'
+              : generateBlockId(index),
+          markdown: markdown.trim(),
+        })
+      );
+
+      const resolvedPrerequisites =
+        item.prerequisites && item.prerequisites.length > 0
+          ? item.prerequisites
+          : childBlocks[0]?.id === 'blk_00'
+            ? extractPrerequisitesFromBlock0(childBlocks[0].markdown)
+            : undefined;
+
+      const childDocNode: DocumentNode = {
+        id: childDocId,
+        title: childTitle,
+        ...(item.shortTitle ? { shortTitle: item.shortTitle.trim() } : {}),
+        filename: childFilename,
+        parentId: docId,
+        parentBlockId: null,
+        childDocIds: [],
+        ...(resolvedPrerequisites && resolvedPrerequisites.length > 0
+          ? { prerequisites: resolvedPrerequisites }
+          : {}),
+      };
+
+      await fs.writeFile(
+        path.join(this.workspaceDir, childFilename),
+        serializeMarkdownBlocks(childBlocks),
+        'utf-8'
+      );
+
+      state.documents[childDocId] = childDocNode;
+      parentDocNode.childDocIds.push(childDocId);
+      createdDocs.push({ docNode: childDocNode, blocks: childBlocks });
+    }
+
+    state.documents[docId] = parentDocNode;
+    state.activeChat = null;
+    state.activeDocId = createdDocs[0]!.docNode.id;
+    await this.saveState(state);
+
+    const primaryChild = createdDocs[0]!;
+    return {
+      document: primaryChild.docNode,
+      blocks: primaryChild.blocks,
+      toc: extractToc(primaryChild.blocks),
       documents: state.documents,
       activeChat: null,
       pendingEdits: [],

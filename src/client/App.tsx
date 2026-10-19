@@ -11,6 +11,7 @@ import {
   type TopicFamiliarity,
 } from '../shared/schema.js';
 import { ConceptBlockCard } from './components/ConceptBlockCard.js';
+import { DocumentChatDrawer } from './components/DocumentChatDrawer.js';
 import { GateBanner } from './components/GateBanner.js';
 import { SeedModal } from './components/SeedModal.js';
 import { SidebarTree } from './components/SidebarTree.js';
@@ -37,6 +38,11 @@ export function App(): React.ReactElement {
   const [toc, setToc] = useState<TocItem[]>([]);
   const [activeChat, setActiveChat] = useState<EphemeralChatThread | null>(null);
   const [activeChatBlockId, setActiveChatBlockId] = useState<string | null>(null);
+  const [isDocChatOpen, setIsDocChatOpen] = useState<boolean>(false);
+  const [isSendingDocChat, setIsSendingDocChat] = useState<boolean>(false);
+  const [isIntegratingDocChat, setIsIntegratingDocChat] = useState<boolean>(false);
+  const [isBranchingDocChat, setIsBranchingDocChat] = useState<boolean>(false);
+  const [docChatError, setDocChatError] = useState<string | null>(null);
   const [pendingEdits, setPendingEdits] = useState<PendingSuggestedEdit[]>([]);
   const [isSendingChat, setIsSendingChat] = useState<boolean>(false);
   const [isIntegratingChat, setIsIntegratingChat] = useState<boolean>(false);
@@ -93,6 +99,9 @@ export function App(): React.ReactElement {
     if (payload.activeChat !== undefined) {
       setActiveChat(payload.activeChat);
       setActiveChatBlockId(payload.activeChat?.blockId ?? null);
+      if (payload.activeChat && payload.activeChat.blockId === null) {
+        setIsDocChatOpen(true);
+      }
     }
     if (payload.pendingEdits !== undefined) {
       setPendingEdits(payload.pendingEdits);
@@ -189,6 +198,8 @@ export function App(): React.ReactElement {
       setActiveChat(null);
       setActiveChatBlockId(null);
       setChatError(null);
+      setIsDocChatOpen(false);
+      setDocChatError(null);
 
       if (isPopState) {
         const savedY = scrollPositionsRef.current[docId] ?? 0;
@@ -265,6 +276,8 @@ export function App(): React.ReactElement {
       setActiveChat(null);
       setActiveChatBlockId(null);
       setChatError(null);
+      setIsDocChatOpen(false);
+      setDocChatError(null);
       scrollPositionsRef.current = {};
       if (data.document?.id && typeof window !== 'undefined') {
         const url = new URL(window.location.href);
@@ -599,6 +612,139 @@ export function App(): React.ReactElement {
     }
   };
 
+  const handleToggleDocChat = () => {
+    if (pendingEdits.length > 0) {
+      return;
+    }
+    setDocChatError(null);
+    setIsDocChatOpen((prev) => {
+      const next = !prev;
+      if (next && activeChatBlockId !== null) {
+        setActiveChatBlockId(null);
+      }
+      return next;
+    });
+  };
+
+  const handleSendDocChatMessage = async (message: string) => {
+    setIsSendingDocChat(true);
+    setDocChatError(null);
+
+    try {
+      const res = await fetch('/api/doc/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          docId: document?.id ?? 'index',
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error ?? `Failed to send message (${res.status})`);
+      }
+
+      setActiveChat(data.activeChat as EphemeralChatThread);
+      setActiveChatBlockId(null);
+      setIsDocChatOpen(true);
+    } catch (err) {
+      setDocChatError(
+        err instanceof Error ? err.message : 'Failed to send notebook message'
+      );
+    } finally {
+      setIsSendingDocChat(false);
+    }
+  };
+
+  const handleDiscardDocChat = async () => {
+    setDocChatError(null);
+    try {
+      await fetch(
+        `/api/doc/chat?docId=${encodeURIComponent(document?.id ?? 'index')}`,
+        {
+          method: 'DELETE',
+        }
+      );
+    } finally {
+      setActiveChat(null);
+      setActiveChatBlockId(null);
+      setIsDocChatOpen(false);
+    }
+  };
+
+  const handleIntegrateDocChat = async () => {
+    setIsIntegratingDocChat(true);
+    setDocChatError(null);
+
+    try {
+      const res = await fetch('/api/doc/integrate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ docId: document?.id ?? 'index' }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          data.error ?? `Failed to integrate notebook chat (${res.status})`
+        );
+      }
+
+      applyDocResponse(data as DocApiResponse);
+      setActiveChat(null);
+      setActiveChatBlockId(null);
+      setIsDocChatOpen(false);
+    } catch (err) {
+      setDocChatError(
+        err instanceof Error ? err.message : 'Failed to integrate notebook chat'
+      );
+    } finally {
+      setIsIntegratingDocChat(false);
+    }
+  };
+
+  const handleBranchDocChat = async () => {
+    setIsBranchingDocChat(true);
+    setDocChatError(null);
+    if (documentRef.current?.id) {
+      scrollPositionsRef.current[documentRef.current.id] = window.scrollY;
+    }
+
+    try {
+      const res = await fetch('/api/doc/branch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ docId: document?.id ?? 'index' }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          data.error ?? `Failed to branch notebook chat (${res.status})`
+        );
+      }
+
+      applyDocResponse(data as DocApiResponse);
+      setActiveChat(null);
+      setActiveChatBlockId(null);
+      setIsDocChatOpen(false);
+      const doc = (data as DocApiResponse).document;
+      if (doc?.id && typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.set('id', doc.id);
+        window.history.pushState({ docId: doc.id }, '', url.toString());
+        restoreScroll(0);
+      }
+    } catch (err) {
+      setDocChatError(
+        err instanceof Error ? err.message : 'Failed to branch sub-document'
+      );
+    } finally {
+      setIsBranchingDocChat(false);
+    }
+  };
+
   const handleAcceptEdit = async (editId: string) => {
     try {
       const res = await fetch(
@@ -878,6 +1024,28 @@ export function App(): React.ReactElement {
             </>
           )}
         </div>
+
+        {document && blocks.length > 0 && (
+          <DocumentChatDrawer
+            documentTitle={document.title}
+            isOpen={isDocChatOpen}
+            messages={
+              activeChat && activeChat.blockId === null
+                ? activeChat.messages
+                : []
+            }
+            isSending={isSendingDocChat}
+            isIntegrating={isIntegratingDocChat}
+            isBranching={isBranchingDocChat}
+            isChatLocked={pendingEdits.length > 0}
+            error={docChatError}
+            onToggleOpen={handleToggleDocChat}
+            onSendMessage={handleSendDocChatMessage}
+            onIntegrate={handleIntegrateDocChat}
+            onBranch={handleBranchDocChat}
+            onDiscard={handleDiscardDocChat}
+          />
+        )}
       </main>
 
       {isSeedModalOpen && (

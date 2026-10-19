@@ -62,12 +62,31 @@ export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 
 export const EphemeralChatThreadSchema = z.object({
   docId: z.string(),
-  blockId: z.string(),
+  blockId: z.string().nullable(),
   modelId: z.string(),
   messages: z.array(ChatMessageSchema),
 });
 
 export type EphemeralChatThread = z.infer<typeof EphemeralChatThreadSchema>;
+
+export const DocumentIntegrateBlockUpdateSchema = z.object({
+  blockId: z.string(),
+  updatedMarkdown: z.string(),
+  reason: z.string(),
+});
+
+export type DocumentIntegrateBlockUpdate = z.infer<
+  typeof DocumentIntegrateBlockUpdateSchema
+>;
+
+export const DocumentIntegrateResultSchema = z.object({
+  updatedBlocks: z.array(DocumentIntegrateBlockUpdateSchema).default([]),
+  insertedBlocksMarkdown: z.array(z.string()).default([]),
+});
+
+export type DocumentIntegrateResult = z.infer<
+  typeof DocumentIntegrateResultSchema
+>;
 
 export const ReasoningEffortSchema = z.enum(['low', 'medium', 'high']);
 

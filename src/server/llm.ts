@@ -4,11 +4,13 @@ import { google } from '@ai-sdk/google';
 import { openai } from '@ai-sdk/openai';
 import {
   BranchResultSchema,
+  DocumentIntegrateResultSchema,
   IntegrateResultSchema,
   MultiBranchObjectSchema,
   SeedResultSchema,
   type BranchResult,
   type ChatMessage,
+  type DocumentIntegrateResult,
   type IntegrateResult,
   type LearnerProfile,
   type NotebookSettings,
@@ -16,7 +18,7 @@ import {
   type ReasoningEffort,
   type SeedResult,
 } from '../shared/schema.js';
-import type { BoundedCellContext } from './context.js';
+import type { BoundedCellContext, DocumentContext } from './context.js';
 import { isPrerequisiteBlock } from './markdown.js';
 
 export interface SeedGeneratorOptions {
@@ -49,6 +51,31 @@ export type IntegrateGenerator = (input: {
 
 export type BranchGenerator = (input: {
   context: BoundedCellContext;
+  messages: ChatMessage[];
+  modelId: string;
+  reasoningEffort?: ReasoningEffort;
+  pedagogicalPrompt?: string;
+  learnerProfile?: LearnerProfile;
+}) => Promise<BranchResult>;
+
+export type DocumentChatGenerator = (input: {
+  context: DocumentContext;
+  messages: ChatMessage[];
+  modelId: string;
+  reasoningEffort?: ReasoningEffort;
+  pedagogicalPrompt?: string;
+}) => Promise<string>;
+
+export type DocumentIntegrateGenerator = (input: {
+  context: DocumentContext;
+  messages: ChatMessage[];
+  modelId: string;
+  reasoningEffort?: ReasoningEffort;
+  pedagogicalPrompt?: string;
+}) => Promise<DocumentIntegrateResult>;
+
+export type DocumentBranchGenerator = (input: {
+  context: DocumentContext;
   messages: ChatMessage[];
   modelId: string;
   reasoningEffort?: ReasoningEffort;
@@ -322,6 +349,135 @@ export const defaultBranchGenerator: BranchGenerator = async ({
       formatBoundedContextPrompt(context),
     ].join('\n'),
     prompt: `Branch new deep-dive sub-document(s) from the following Q&A discussion on Target Block [${context.targetBlock.id}]:\n\n${transcript}`,
+  });
+
+  return object;
+};
+
+export function formatDocumentContextPrompt(context: DocumentContext): string {
+  const tocLines = context.toc
+    .map((item) => `${'  '.repeat(item.level - 1)}- [${item.blockId}] ${item.text}`)
+    .join('\n');
+
+  const ancestorSection =
+    context.ancestorTocs.length > 0
+      ? context.ancestorTocs
+          .map(
+            (anc) =>
+              `Ancestor Document (${anc.title}):\n` +
+              anc.toc.map((t) => `  - [${t.blockId}] ${t.text}`).join('\n')
+          )
+          .join('\n\n') + '\n\n'
+      : '';
+
+  const blocksSection = context.blocks
+    .map((b) => `### Block [${b.id}]\n${b.markdown}`)
+    .join('\n\n');
+
+  return [
+    `Document: ${context.title} (${context.docId})`,
+    ancestorSection + `Document Table of Contents:\n${tocLines || '(empty)'}`,
+    `Document Blocks:\n${blocksSection}`,
+  ].join('\n\n');
+}
+
+export const defaultDocumentChatGenerator: DocumentChatGenerator = async ({
+  context,
+  messages,
+  modelId,
+  reasoningEffort = 'high',
+  pedagogicalPrompt,
+}): Promise<string> => {
+  const model = resolveLanguageModel(modelId);
+  const resolvedPedagogy = pedagogicalPrompt ?? resolvePedagogicalPrompt();
+  const { text } = await generateText({
+    model,
+    system: [
+      'You are an expert tutor answering holistic questions about a structured notebook document.',
+      'Explain concepts clearly, synthesize across blocks when relevant, ground explanations in intuition and concrete examples, and stay aligned with the notebook content.',
+      resolvedPedagogy,
+      KATEX_MATH_FORMATTING_RULES,
+      `Reasoning Effort: ${reasoningEffort}`,
+      '',
+      formatDocumentContextPrompt(context),
+    ].join('\n'),
+    messages: messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    })),
+  });
+
+  return text;
+};
+
+export const defaultDocumentIntegrateGenerator: DocumentIntegrateGenerator = async ({
+  context,
+  messages,
+  modelId,
+  reasoningEffort = 'high',
+  pedagogicalPrompt,
+}): Promise<DocumentIntegrateResult> => {
+  const model = resolveLanguageModel(modelId);
+  const resolvedPedagogy = pedagogicalPrompt ?? resolvePedagogicalPrompt();
+  const transcript = messages
+    .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
+    .join('\n\n');
+
+  const { object } = await generateObject({
+    model,
+    schema: DocumentIntegrateResultSchema,
+    system: [
+      'You are an editorial notebook integrator.',
+      resolvedPedagogy,
+      KATEX_MATH_FORMATTING_RULES,
+      `Reasoning Effort: ${reasoningEffort}`,
+      'Given the document context and a notebook-level Q&A chat transcript, synthesize the discussion into targeted updates for existing cards and/or newly appended concept blocks:',
+      '1. `updatedBlocks`: If the discussion clarifies, corrects, expands, or updates content that belongs inside one or more EXISTING concept blocks, return an array of update objects targeting those blocks by their exact blockId (e.g. `blk_01`):',
+      '   - `blockId`: The exact ID of the existing block to update.',
+      '   - `updatedMarkdown`: The complete revised Markdown content for that block incorporating the revisions.',
+      '   - `reason`: A concise explanation of why this block was updated.',
+      '   If no existing blocks should be altered, return an empty array `[]`.',
+      '2. `insertedBlocksMarkdown`: If the discussion introduces distinct new sub-concepts, sections, or topics that warrant their own new Concept Blocks appended to the document, return 1 or more complete Markdown blocks (each starting with a ## heading); otherwise return an empty array `[]`.',
+      '',
+      formatDocumentContextPrompt(context),
+    ].join('\n'),
+    prompt: `Integrate the following notebook chat transcript into updates for existing blocks and/or new concept block(s):\n\n${transcript}`,
+  });
+
+  return object;
+};
+
+export const defaultDocumentBranchGenerator: DocumentBranchGenerator = async ({
+  context,
+  messages,
+  modelId,
+  reasoningEffort = 'high',
+  pedagogicalPrompt,
+  learnerProfile,
+}): Promise<BranchResult> => {
+  const model = resolveLanguageModel(modelId);
+  const resolvedPedagogy = pedagogicalPrompt ?? resolvePedagogicalPrompt();
+  const transcript = messages
+    .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
+    .join('\n\n');
+
+  const { object } = await generateObject({
+    model,
+    schema: MultiBranchObjectSchema,
+    system: [
+      'You are an editorial notebook author branching dedicated deep-dive sub-documents from an open notebook discussion.',
+      resolvedPedagogy,
+      formatLearnerProfilePrompt(learnerProfile),
+      KATEX_MATH_FORMATTING_RULES,
+      `Reasoning Effort: ${reasoningEffort}`,
+      'Generate one or more deep-dive sub-documents in `branches` to thoroughly unpack the sub-topics explored in the chat:',
+      'For each sub-document in `branches`, provide a clear, descriptive child document `title`, a concise `shortTitle` (2-4 words), a structured `prerequisites` array of 2 to 5 prerequisite topic names, and 4 to 8 self-contained Markdown concept blocks:',
+      '1. Block 0 MUST start with `## Prerequisites & Foundations` (or `## Prerequisites & Notation`).',
+      '2. Subsequent blocks (`## 1. ...`, `## 2. ...`) build step-by-step from intuition to deeper mechanisms or analysis.',
+      '',
+      formatDocumentContextPrompt(context),
+    ].join('\n'),
+    prompt: `Branch new deep-dive sub-document(s) from the following notebook Q&A discussion:\n\n${transcript}`,
   });
 
   return object;
