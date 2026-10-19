@@ -155,6 +155,7 @@ export function renderMarkdownWithMath(markdown: string): string {
 
 export interface ConceptBlockCardProps {
   block: ConceptBlock;
+  isFirstBlock?: boolean;
   canMerge?: boolean;
   isChatOpen?: boolean;
   chatMessages?: ChatMessage[];
@@ -267,6 +268,7 @@ const overflowMenuItemStyle: React.CSSProperties = {
 
 export function ConceptBlockCard({
   block,
+  isFirstBlock = false,
   canMerge = true,
   isChatOpen = false,
   chatMessages = [],
@@ -336,12 +338,16 @@ export function ConceptBlockCard({
     };
   }, [isOverflowOpen]);
 
-  const renderedMarkdown =
+  let renderedMarkdown =
     childDocuments.length > 0
       ? block.markdown
           .replace(/^\s*\[→\s*Deep dive:\s*[^\]]+\]\([^)]+\)\s*$/gm, '')
           .trim()
       : block.markdown;
+
+  if (isFirstBlock || block.id === 'blk_00') {
+    renderedMarkdown = renderedMarkdown.replace(/^(#{1,3})\s*0\.\s*/m, '$1 ');
+  }
 
   const segments = splitMarkdownSegments(renderedMarkdown);
   const resolvedPrerequisites =

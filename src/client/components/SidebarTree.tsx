@@ -437,7 +437,9 @@ export function SidebarTree({
                       textDecoration: 'none',
                     }}
                   >
-                    {item.text}
+                    {idx === 0 || item.blockId === 'blk_00'
+                      ? item.text.replace(/^0\.\s*/, '')
+                      : item.text}
                   </a>
                 </li>
               ))}

@@ -829,6 +829,7 @@ export function App(): React.ReactElement {
                     <ConceptBlockCard
                       key={block.id}
                       block={block}
+                      isFirstBlock={idx === 0}
                       canMerge={idx < blocks.length - 1}
                       isChatOpen={isChatOpen}
                       chatMessages={chatMessages}
