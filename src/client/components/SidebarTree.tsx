@@ -20,6 +20,7 @@ export interface SidebarTreeProps {
   onToggleCollapse: () => void;
   onOpenSeedModal: () => void;
   onSelectDocument?: (docId: string) => void;
+  onDeleteDocument?: (docId: string) => Promise<void> | void;
   onUpdateSettings?: (patch: Partial<NotebookSettings>) => Promise<void> | void;
   onSwitchWorkspace?: (workspaceDir: string) => Promise<void> | void;
 }
@@ -42,6 +43,7 @@ export function SidebarTree({
   onToggleCollapse,
   onOpenSeedModal,
   onSelectDocument,
+  onDeleteDocument,
   onUpdateSettings,
   onSwitchWorkspace,
 }: SidebarTreeProps): React.ReactElement {
@@ -155,6 +157,29 @@ export function SidebarTree({
           >
             {depth > 0 ? `↳ ${navTitle}` : navTitle}
           </button>
+          {onDeleteDocument && (
+            <button
+              type="button"
+              aria-label={`Delete document ${navTitle}`}
+              title={`Delete "${docNode.title}"`}
+              onClick={(e) => {
+                e.stopPropagation();
+                void onDeleteDocument(docNode.id);
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: '4px 6px',
+                fontSize: '14px',
+                color: '#65635E',
+                cursor: 'pointer',
+                lineHeight: 1,
+                borderRadius: '4px',
+              }}
+            >
+              ×
+            </button>
+          )}
         </div>
         {children.length > 0 && !isBranchCollapsed && (
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
@@ -245,7 +270,7 @@ export function SidebarTree({
                 cursor: 'pointer',
               }}
             >
-              + Seed
+              + New
             </button>
             <button
               type="button"
@@ -539,8 +564,8 @@ export function SidebarTree({
               padding: '4px 8px',
             }}
           >
-            <option value="intuitive-physical">Intuitive Physical Picture</option>
-            <option value="rigorous-derivation">Rigorous Derivation</option>
+            <option value="intuitive-physical">Intuitive & Conceptual</option>
+            <option value="rigorous-derivation">Rigorous & Formal</option>
             <option value="custom">Custom Prompt</option>
           </select>
         </div>

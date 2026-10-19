@@ -408,6 +408,36 @@ export function createApp(options: CreateAppOptions): Hono {
     }
   });
 
+  app.delete('/api/doc/:id', async (c) => {
+    await ensureWorkspaceInitialized();
+    const docId = c.req.param('id');
+
+    try {
+      const nextLoaded = await store.deleteDocument(docId);
+      const settings = await store.getSettings(getDefaultModelId());
+      const profile = await profileStore.loadProfile();
+
+      return c.json({
+        document: nextLoaded.document,
+        blocks: nextLoaded.blocks,
+        toc: nextLoaded.toc,
+        documents: nextLoaded.documents,
+        activeChat: nextLoaded.activeChat,
+        pendingEdits: nextLoaded.pendingEdits,
+        settings,
+        workspaceDir: store.workspaceDir,
+        workspaces: Array.from(knownWorkspaces),
+        profile,
+        modelId: settings.modelId,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to delete document';
+      const status = message.includes('not found') ? 404 : 400;
+      return c.json({ error: message }, status);
+    }
+  });
+
   app.put('/api/blocks/:id', async (c) => {
     await ensureWorkspaceInitialized();
     const blockId = c.req.param('id');

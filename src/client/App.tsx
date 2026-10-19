@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   getConciseTitle,
   type ConceptBlock,
@@ -14,6 +14,7 @@ import { ConceptBlockCard } from './components/ConceptBlockCard.js';
 import { GateBanner } from './components/GateBanner.js';
 import { SeedModal } from './components/SeedModal.js';
 import { SidebarTree } from './components/SidebarTree.js';
+import { restoreScroll, scrollToPosition } from './scroll.js';
 
 interface DocApiResponse {
   document: DocumentNode | null;
@@ -59,6 +60,23 @@ export function App(): React.ReactElement {
   const [seedError, setSeedError] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [isSeedModalOpen, setIsSeedModalOpen] = useState<boolean>(false);
+  const [pendingDeleteDocId, setPendingDeleteDocId] = useState<string | null>(
+    null
+  );
+  const [isDeletingDoc, setIsDeletingDoc] = useState<boolean>(false);
+
+  const scrollPositionsRef = useRef<Record<string, number>>({});
+  const documentRef = useRef<DocumentNode | null>(null);
+
+  useEffect(() => {
+    documentRef.current = document;
+  }, [document]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+  }, []);
 
   const applyDocResponse = (payload: DocApiResponse) => {
     setDocument(payload.document);
@@ -109,6 +127,14 @@ export function App(): React.ReactElement {
         const data = (await res.json()) as DocApiResponse;
         if (!cancelled) {
           applyDocResponse(data);
+          if (typeof window !== 'undefined' && data.document?.id) {
+            window.history.replaceState(
+              { docId: data.document.id },
+              '',
+              window.location.href
+            );
+            scrollPositionsRef.current[data.document.id] = window.scrollY;
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -129,7 +155,30 @@ export function App(): React.ReactElement {
     };
   }, []);
 
-  const handleSelectDocument = async (docId: string) => {
+  const handleSelectDocument = async (
+    docId: string,
+    options?: { isPopState?: boolean }
+  ) => {
+    const isPopState = options?.isPopState ?? false;
+
+    if (docId === documentRef.current?.id) {
+      if (!isPopState) {
+        scrollToPosition(0);
+      }
+      return;
+    }
+
+    if (documentRef.current?.id) {
+      scrollPositionsRef.current[documentRef.current.id] = window.scrollY;
+    }
+
+    if (!isPopState && typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('id', docId);
+      window.history.pushState({ docId }, '', url.toString());
+      scrollToPosition(0);
+    }
+
     try {
       const res = await fetch(`/api/doc?id=${encodeURIComponent(docId)}`);
       if (!res.ok) {
@@ -140,10 +189,37 @@ export function App(): React.ReactElement {
       setActiveChat(null);
       setActiveChatBlockId(null);
       setChatError(null);
+
+      if (isPopState) {
+        const savedY = scrollPositionsRef.current[docId] ?? 0;
+        restoreScroll(savedY);
+      } else {
+        restoreScroll(0);
+      }
     } catch (err) {
       console.error(err);
     }
   };
+
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      if (documentRef.current?.id) {
+        scrollPositionsRef.current[documentRef.current.id] = window.scrollY;
+      }
+
+      const targetDocId =
+        (event.state as { docId?: string } | null)?.docId ??
+        new URLSearchParams(window.location.search).get('id') ??
+        'index';
+
+      void handleSelectDocument(targetDocId, { isPopState: true });
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
 
   const handleUpdateSettings = async (patch: Partial<NotebookSettings>) => {
     setSettings((prev) => ({ ...prev, ...patch }));
@@ -189,6 +265,13 @@ export function App(): React.ReactElement {
       setActiveChat(null);
       setActiveChatBlockId(null);
       setChatError(null);
+      scrollPositionsRef.current = {};
+      if (data.document?.id && typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.set('id', data.document.id);
+        window.history.pushState({ docId: data.document.id }, '', url.toString());
+        restoreScroll(0);
+      }
     } catch (err) {
       console.error(err);
     }
@@ -225,6 +308,9 @@ export function App(): React.ReactElement {
 
   const handleSeedPrerequisite = async (topic: string) => {
     setSeedingPrerequisiteTopic(topic);
+    if (documentRef.current?.id) {
+      scrollPositionsRef.current[documentRef.current.id] = window.scrollY;
+    }
     try {
       const res = await fetch('/api/prerequisites/seed', {
         method: 'POST',
@@ -240,6 +326,12 @@ export function App(): React.ReactElement {
         setActiveChat(null);
         setActiveChatBlockId(null);
         setChatError(null);
+        if (data.document?.id && typeof window !== 'undefined') {
+          const url = new URL(window.location.href);
+          url.searchParams.set('id', data.document.id);
+          window.history.pushState({ docId: data.document.id }, '', url.toString());
+          restoreScroll(0);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -266,12 +358,62 @@ export function App(): React.ReactElement {
 
       applyDocResponse(data as DocApiResponse);
       setIsSeedModalOpen(false);
+      const doc = (data as DocApiResponse).document;
+      if (doc?.id && typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.set('id', doc.id);
+        window.history.pushState({ docId: doc.id }, '', url.toString());
+        restoreScroll(0);
+      }
     } catch (err) {
       setSeedError(
         err instanceof Error ? err.message : 'Failed to seed topic'
       );
     } finally {
       setIsSeeding(false);
+    }
+  };
+
+  const handleDeleteDocument = (docId: string) => {
+    setPendingDeleteDocId(docId);
+  };
+
+  const confirmDeleteDocument = async () => {
+    if (!pendingDeleteDocId || isDeletingDoc) {
+      return;
+    }
+    const docId = pendingDeleteDocId;
+    setIsDeletingDoc(true);
+    try {
+      const res = await fetch(`/api/doc/${encodeURIComponent(docId)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        return;
+      }
+      const data = (await res.json()) as DocApiResponse;
+      delete scrollPositionsRef.current[docId];
+      applyDocResponse(data);
+      setPendingDeleteDocId(null);
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        if (data.document?.id) {
+          url.searchParams.set('id', data.document.id);
+          window.history.pushState(
+            { docId: data.document.id },
+            '',
+            url.toString()
+          );
+          restoreScroll(0);
+        } else {
+          url.searchParams.delete('id');
+          window.history.pushState({}, '', url.toString());
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsDeletingDoc(false);
     }
   };
 
@@ -417,6 +559,9 @@ export function App(): React.ReactElement {
   const handleBranchChat = async (blockId: string) => {
     setIsBranchingChat(true);
     setChatError(null);
+    if (documentRef.current?.id) {
+      scrollPositionsRef.current[documentRef.current.id] = window.scrollY;
+    }
 
     try {
       const res = await fetch(
@@ -438,6 +583,13 @@ export function App(): React.ReactElement {
       applyDocResponse(data as DocApiResponse);
       setActiveChat(null);
       setActiveChatBlockId(null);
+      const doc = (data as DocApiResponse).document;
+      if (doc?.id && typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.set('id', doc.id);
+        window.history.pushState({ docId: doc.id }, '', url.toString());
+        restoreScroll(0);
+      }
     } catch (err) {
       setChatError(
         err instanceof Error ? err.message : 'Failed to branch sub-document'
@@ -527,6 +679,7 @@ export function App(): React.ReactElement {
         onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
         onOpenSeedModal={() => setIsSeedModalOpen(true)}
         onSelectDocument={(docId) => void handleSelectDocument(docId)}
+        onDeleteDocument={(docId) => void handleDeleteDocument(docId)}
         onUpdateSettings={(patch) => void handleUpdateSettings(patch)}
         onSwitchWorkspace={(dir) => void handleSwitchWorkspace(dir)}
       />
@@ -558,6 +711,11 @@ export function App(): React.ReactElement {
               isSubmitting={isSeeding}
               error={seedError}
               onSeed={handleSeed}
+              documents={documents}
+              onSelectDocument={(docId) => void handleSelectDocument(docId)}
+              onDeleteDocument={handleDeleteDocument}
+              settings={settings}
+              onUpdateSettings={handleUpdateSettings}
             />
           ) : (
             <>
@@ -606,13 +764,33 @@ export function App(): React.ReactElement {
                 )}
                 <div
                   style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
                     fontFamily: "'Inter', system-ui, sans-serif",
                     fontSize: '12px',
                     color: '#65635E',
                     marginBottom: '8px',
                   }}
                 >
-                  {document.filename}
+                  <span>{document.filename}</span>
+                  <button
+                    type="button"
+                    aria-label="Delete current notebook"
+                    onClick={() => void handleDeleteDocument(document.id)}
+                    style={{
+                      backgroundColor: 'transparent',
+                      color: '#B91C1C',
+                      border: '1px solid #FECACA',
+                      borderRadius: '4px',
+                      padding: '2px 8px',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Delete Notebook
+                  </button>
                 </div>
                 <h1
                   style={{
@@ -706,8 +884,122 @@ export function App(): React.ReactElement {
           isSubmitting={isSeeding}
           error={seedError}
           onSeed={handleSeed}
+          documents={documents}
+          onSelectDocument={(docId) => {
+            void handleSelectDocument(docId);
+            setIsSeedModalOpen(false);
+          }}
+          onDeleteDocument={handleDeleteDocument}
+          settings={settings}
+          onUpdateSettings={handleUpdateSettings}
           onClose={() => setIsSeedModalOpen(false)}
         />
+      )}
+
+      {pendingDeleteDocId && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirm Delete Notebook"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(24, 24, 27, 0.32)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            zIndex: 60,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#FFFFFF',
+              border: '1px solid #E4DFD7',
+              borderRadius: '8px',
+              padding: '24px',
+              maxWidth: '440px',
+              width: '100%',
+              boxShadow: '0 4px 12px rgba(24, 24, 27, 0.12)',
+              fontFamily: "'Inter', system-ui, sans-serif",
+            }}
+          >
+            <h3
+              style={{
+                fontFamily: "'Newsreader', 'Charter', 'Georgia', serif",
+                fontSize: '20px',
+                color: '#18181B',
+                marginTop: 0,
+                marginBottom: '8px',
+              }}
+            >
+              Delete Notebook?
+            </h3>
+            <p
+              style={{
+                fontSize: '14px',
+                color: '#65635E',
+                marginTop: 0,
+                marginBottom: '20px',
+                lineHeight: 1.5,
+              }}
+            >
+              Are you sure you want to permanently delete{' '}
+              <strong style={{ color: '#18181B' }}>
+                {documents[pendingDeleteDocId]?.title ??
+                  (document?.id === pendingDeleteDocId
+                    ? document.title
+                    : pendingDeleteDocId)}
+              </strong>{' '}
+              ({documents[pendingDeleteDocId]?.filename ?? `${pendingDeleteDocId}.md`})
+              {(documents[pendingDeleteDocId]?.childDocIds?.length ?? 0) > 0
+                ? ` and its ${documents[pendingDeleteDocId]!.childDocIds.length} child sub-document(s)`
+                : ''}
+              ? This action cannot be undone.
+            </p>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '8px',
+              }}
+            >
+              <button
+                type="button"
+                disabled={isDeletingDoc}
+                onClick={() => setPendingDeleteDocId(null)}
+                style={{
+                  backgroundColor: '#FAF8F5',
+                  color: '#18181B',
+                  border: '1px solid #E4DFD7',
+                  borderRadius: '6px',
+                  padding: '8px 16px',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingDoc}
+                onClick={() => void confirmDeleteDocument()}
+                style={{
+                  backgroundColor: '#B91C1C',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '8px 16px',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: isDeletingDoc ? 'wait' : 'pointer',
+                }}
+              >
+                {isDeletingDoc ? 'Deleting...' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1313,4 +1313,129 @@ export class WorkspaceStore {
       parentBlockId: loaded.document.parentBlockId,
     });
   }
+
+  async deleteDocument(requestedDocId: string): Promise<LoadedDocument> {
+    const state = await this.loadState();
+    const resolvedId = state.documents[requestedDocId]
+      ? requestedDocId
+      : await this.resolveDocId(requestedDocId);
+    const targetNode = state.documents[resolvedId];
+    if (!targetNode) {
+      throw new Error(`Document not found: ${requestedDocId}`);
+    }
+
+    const toDelete = new Set<string>();
+    const collectDescendants = (id: string) => {
+      if (toDelete.has(id)) return;
+      toDelete.add(id);
+      const node = state.documents[id];
+      if (node) {
+        for (const childId of node.childDocIds) {
+          collectDescendants(childId);
+        }
+      }
+    };
+    collectDescendants(resolvedId);
+
+    // If deleting a child document whose parent remains, strip any deep-dive link to it from parent markdown
+    if (
+      targetNode.parentId &&
+      !toDelete.has(targetNode.parentId) &&
+      state.documents[targetNode.parentId]
+    ) {
+      const parentNode = state.documents[targetNode.parentId];
+      const parentPath = path.join(this.workspaceDir, parentNode.filename);
+      try {
+        const parentRaw = await fs.readFile(parentPath, 'utf-8');
+        const escapedFilename = targetNode.filename.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          '\\$&'
+        );
+        const linkRegex = new RegExp(
+          `\\n*\\[→\\s*Deep dive:[^\\]]*\\]\\(${escapedFilename}\\)`,
+          'g'
+        );
+        const cleanedRaw = parentRaw.replace(linkRegex, '');
+        if (cleanedRaw !== parentRaw) {
+          await fs.writeFile(parentPath, cleanedRaw, 'utf-8');
+        }
+      } catch {
+        // Ignore if parent file cannot be read
+      }
+    }
+
+    for (const id of toDelete) {
+      const node = state.documents[id];
+      const filename = node?.filename ?? `${id}.md`;
+      try {
+        await fs.unlink(path.join(this.workspaceDir, filename));
+      } catch {
+        // Ignore if file already removed
+      }
+      delete state.documents[id];
+    }
+
+    for (const doc of Object.values(state.documents)) {
+      doc.childDocIds = doc.childDocIds.filter((cid) => !toDelete.has(cid));
+      if (doc.prerequisiteDocIds) {
+        const nextPrereqIds = Object.fromEntries(
+          Object.entries(doc.prerequisiteDocIds).filter(
+            ([, targetId]) => !toDelete.has(targetId)
+          )
+        );
+        if (Object.keys(nextPrereqIds).length > 0) {
+          doc.prerequisiteDocIds = nextPrereqIds;
+        } else {
+          delete doc.prerequisiteDocIds;
+        }
+      }
+    }
+
+    if (state.topicDocIds) {
+      state.topicDocIds = Object.fromEntries(
+        Object.entries(state.topicDocIds).filter(
+          ([, targetId]) => !toDelete.has(targetId)
+        )
+      );
+    }
+
+    state.pendingEdits = state.pendingEdits.filter(
+      (edit) => !toDelete.has(edit.docId)
+    );
+    if (state.activeChat && toDelete.has(state.activeChat.docId)) {
+      state.activeChat = null;
+    }
+
+    if (
+      !state.activeDocId ||
+      toDelete.has(state.activeDocId) ||
+      !state.documents[state.activeDocId]
+    ) {
+      if (targetNode.parentId && state.documents[targetNode.parentId]) {
+        state.activeDocId = targetNode.parentId;
+      } else {
+        const firstRoot = Object.values(state.documents).find(
+          (d) => d.parentId === null
+        );
+        const firstAny = Object.keys(state.documents)[0];
+        state.activeDocId = firstRoot?.id ?? firstAny;
+      }
+    }
+
+    await this.saveState(state);
+
+    if (state.activeDocId && state.documents[state.activeDocId]) {
+      return this.loadDocument(state.activeDocId);
+    }
+
+    return {
+      document: null,
+      blocks: [],
+      toc: [],
+      documents: state.documents,
+      activeChat: null,
+      pendingEdits: [],
+      settings: this.resolveStateSettings(state),
+    };
+  }
 }
