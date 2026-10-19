@@ -696,7 +696,7 @@ export function ConceptBlockCard({
               >
                 Interactive Prerequisites
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
                 {resolvedPrerequisites.map((topic) => {
                   const status: TopicFamiliarity =
                     learnerProfile?.topics?.[topic] ?? 'unseen';
@@ -708,10 +708,13 @@ export function ConceptBlockCard({
                       key={topic}
                       data-testid={`prereq-chip-${topic}`}
                       style={{
-                        display: 'inline-flex',
+                        display: 'flex',
                         alignItems: 'center',
-                        gap: '8px',
-                        padding: '6px 10px',
+                        justifyContent: 'space-between',
+                        gap: '12px',
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        padding: '8px 12px',
                         borderRadius: '6px',
                         border: isKnown
                           ? '1px solid #15803D'
@@ -721,81 +724,92 @@ export function ConceptBlockCard({
                         color: '#18181B',
                       }}
                     >
-                      <span style={{ fontWeight: 600 }}>{topic}</span>
-                      <span
-                        style={{
-                          fontFamily: "'JetBrains Mono', monospace",
-                          fontSize: '11px',
-                          color: isKnown ? '#15803D' : '#65635E',
-                        }}
-                      >
-                        {status}
+                      <span style={{ fontWeight: 600, flex: 1, minWidth: 0, textAlign: 'left' }}>
+                        {topic}
                       </span>
-                      <button
-                        type="button"
-                        aria-label={
-                          isKnown
-                            ? `Unmark ${topic} as known`
-                            : `Mark ${topic} as known`
-                        }
-                        onClick={() =>
-                          void onTogglePrerequisiteKnown?.(
-                            topic,
-                            isKnown ? 'unseen' : 'known'
-                          )
-                        }
+                      <div
                         style={{
-                          ...actionBtnStyle,
-                          backgroundColor: isKnown ? '#15803D' : '#FFFFFF',
-                          color: isKnown ? '#FFFFFF' : '#18181B',
-                          borderColor: isKnown ? '#15803D' : '#E4DFD7',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          flexShrink: 0,
                         }}
                       >
-                        ✓ I know this
-                      </button>
-                      {existingChildDoc ? (
+                        <span
+                          style={{
+                            fontFamily: "'JetBrains Mono', monospace",
+                            fontSize: '11px',
+                            color: isKnown ? '#15803D' : '#65635E',
+                          }}
+                        >
+                          {status}
+                        </span>
                         <button
                           type="button"
-                          aria-label={`Open prerequisite ${topic}`}
+                          aria-label={
+                            isKnown
+                              ? `Unmark ${topic} as known`
+                              : `Mark ${topic} as known`
+                          }
                           onClick={() =>
-                            onSelectDocument?.(existingChildDoc.id)
+                            void onTogglePrerequisiteKnown?.(
+                              topic,
+                              isKnown ? 'unseen' : 'known'
+                            )
                           }
                           style={{
                             ...actionBtnStyle,
-                            backgroundColor: '#FFFFFF',
-                            color: '#1D4ED8',
-                            borderColor: '#1D4ED8',
-                            fontWeight: 500,
+                            backgroundColor: isKnown ? '#15803D' : '#FFFFFF',
+                            color: isKnown ? '#FFFFFF' : '#18181B',
+                            borderColor: isKnown ? '#15803D' : '#E4DFD7',
                           }}
                         >
-                          {`→ Open ${topic}`}
+                          ✓ I know this
                         </button>
-                      ) : (
-                        <button
-                          type="button"
-                          aria-label={`Seed prerequisite ${topic}`}
-                          disabled={isLocked || Boolean(seedingPrerequisiteTopic)}
-                          onClick={() => void onSeedPrerequisite?.(topic)}
-                          style={{
-                            ...actionBtnStyle,
-                            backgroundColor: '#FFFFFF',
-                            color: '#1D4ED8',
-                            borderColor: '#1D4ED8',
-                            opacity:
-                              isLocked || Boolean(seedingPrerequisiteTopic)
-                                ? 0.5
-                                : 1,
-                            cursor:
-                              isLocked || Boolean(seedingPrerequisiteTopic)
-                                ? 'not-allowed'
-                                : 'pointer',
-                          }}
-                        >
-                          {seedingPrerequisiteTopic === topic
-                            ? 'Seeding...'
-                            : '↳ Seed Prerequisite'}
-                        </button>
-                      )}
+                        {existingChildDoc ? (
+                          <button
+                            type="button"
+                            aria-label={`Open prerequisite ${topic}`}
+                            onClick={() =>
+                              onSelectDocument?.(existingChildDoc.id)
+                            }
+                            style={{
+                              ...actionBtnStyle,
+                              backgroundColor: '#FFFFFF',
+                              color: '#1D4ED8',
+                              borderColor: '#1D4ED8',
+                              fontWeight: 500,
+                            }}
+                          >
+                            {`→ Open ${topic}`}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            aria-label={`Seed prerequisite ${topic}`}
+                            disabled={isLocked || Boolean(seedingPrerequisiteTopic)}
+                            onClick={() => void onSeedPrerequisite?.(topic)}
+                            style={{
+                              ...actionBtnStyle,
+                              backgroundColor: '#FFFFFF',
+                              color: '#1D4ED8',
+                              borderColor: '#1D4ED8',
+                              opacity:
+                                isLocked || Boolean(seedingPrerequisiteTopic)
+                                  ? 0.5
+                                  : 1,
+                              cursor:
+                                isLocked || Boolean(seedingPrerequisiteTopic)
+                                  ? 'not-allowed'
+                                  : 'pointer',
+                            }}
+                          >
+                            {seedingPrerequisiteTopic === topic
+                              ? 'Seeding...'
+                              : '↳ Seed Prerequisite'}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
