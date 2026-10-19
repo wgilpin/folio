@@ -798,14 +798,9 @@ export function ConceptBlockCard({
                               color: '#1D4ED8',
                               borderColor: '#1D4ED8',
                               fontWeight: 500,
-                              whiteSpace: 'normal',
-                              wordBreak: 'break-word',
-                              textAlign: 'left',
-                              lineHeight: 1.35,
-                              maxWidth: '100%',
                             }}
                           >
-                            {`→ Open ${topic}`}
+                            Open
                           </button>
                         ) : (
                           <button

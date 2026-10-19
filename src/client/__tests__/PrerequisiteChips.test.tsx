@@ -303,7 +303,7 @@ describe('Epic 02: Interactive Block 0 Prerequisite Chips UI', () => {
       expect(screen.getByTestId('prereq-chip-Differential Forms')).toBeTruthy();
     });
 
-    // Navigate back to parent document via breadcrumb and verify '↳ Seed Prerequisite' is replaced with '→ Open Symplectic Geometry'
+    // Navigate back to parent document via breadcrumb and verify '↳ Seed Prerequisite' is replaced with 'Open'
     const parentBreadcrumb = screen.getByRole('button', {
       name: 'Hamiltonian Mechanics',
     });
@@ -312,14 +312,14 @@ describe('Epic 02: Interactive Block 0 Prerequisite Chips UI', () => {
     const openPrereqBtn = await screen.findByRole('button', {
       name: 'Open prerequisite Symplectic Geometry',
     });
-    expect(openPrereqBtn.textContent).toBe('→ Open Symplectic Geometry');
+    expect(openPrereqBtn.textContent).toBe('Open');
     expect(
       screen.queryByRole('button', {
         name: 'Seed prerequisite Symplectic Geometry',
       })
     ).toBeNull();
 
-    // Clicking '→ Open Symplectic Geometry' opens the child document without reseeding
+    // Clicking 'Open' opens the child document without reseeding
     fireEvent.click(openPrereqBtn);
 
     await waitFor(() => {
@@ -329,7 +329,7 @@ describe('Epic 02: Interactive Block 0 Prerequisite Chips UI', () => {
     });
   });
 
-  it('renders long prerequisite Open button with wrapping styles to avoid layout distortion', async () => {
+  it('renders prerequisite chip for long topic with Open button without title repetition', async () => {
     const longTopic =
       'Fundamentals of Social Media Algorithms & Content Delivery';
     const docPayload = {
@@ -402,9 +402,6 @@ describe('Epic 02: Interactive Block 0 Prerequisite Chips UI', () => {
     const openBtn = screen.getByRole('button', {
       name: `Open prerequisite ${longTopic}`,
     });
-    expect(openBtn.textContent).toBe(`→ Open ${longTopic}`);
-    expect(openBtn.style.whiteSpace).toBe('normal');
-    expect(openBtn.style.maxWidth).toBe('100%');
-    expect(openBtn.style.wordBreak).toBe('break-word');
+    expect(openBtn.textContent).toBe('Open');
   });
 });
