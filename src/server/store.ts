@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import {
   NotebookSettingsSchema,
   NotebookStateSchema,
+  getConciseTitle,
   type BranchResult,
   type ConceptBlock,
   type DocumentNode,
@@ -169,7 +170,44 @@ export class WorkspaceStore {
   async resolveDocId(requestedDocId?: string): Promise<string> {
     const state = await this.loadState();
     if (requestedDocId && requestedDocId !== 'index') {
-      return requestedDocId;
+      const cleanRequested = requestedDocId.replace(/\.md$/i, '').trim();
+      // 1. Direct ID match
+      if (state.documents[cleanRequested]) {
+        return cleanRequested;
+      }
+      // 2. Match by exact or cleaned filename
+      const byFilename = Object.values(state.documents).find(
+        (d) =>
+          d.filename === requestedDocId ||
+          d.filename === `${cleanRequested}.md` ||
+          d.filename.replace(/\.md$/i, '') === cleanRequested
+      );
+      if (byFilename) {
+        return byFilename.id;
+      }
+      // 3. Match by full title slug (backward compatibility with former long slugs)
+      const byTitleSlug = Object.values(state.documents).find(
+        (d) => slugifyTitle(d.title) === cleanRequested
+      );
+      if (byTitleSlug) {
+        return byTitleSlug.id;
+      }
+      // 4. Match by concise title slug
+      const conciseSlug = slugifyTitle(getConciseTitle(cleanRequested));
+      if (state.documents[conciseSlug]) {
+        return conciseSlug;
+      }
+      const byConciseTitleSlug = Object.values(state.documents).find(
+        (d) =>
+          slugifyTitle(getConciseTitle(d.title, d.shortTitle)) === cleanRequested ||
+          slugifyTitle(getConciseTitle(d.title, d.shortTitle)) === conciseSlug ||
+          d.id.startsWith(cleanRequested) ||
+          cleanRequested.startsWith(d.id)
+      );
+      if (byConciseTitleSlug) {
+        return byConciseTitleSlug.id;
+      }
+      return cleanRequested;
     }
     if (requestedDocId === 'index') {
       if (state.documents['index']) {
@@ -197,7 +235,8 @@ export class WorkspaceStore {
 
   async seedRootDocument(seedResult: SeedResult): Promise<LoadedDocument> {
     const state = await this.loadState();
-    const baseSlug = slugifyTitle(seedResult.title);
+    const conciseTitle = getConciseTitle(seedResult.title, seedResult.shortTitle);
+    const baseSlug = slugifyTitle(conciseTitle);
     let docId = baseSlug;
     let suffix = 2;
     while (state.documents[docId]) {
@@ -215,6 +254,9 @@ export class WorkspaceStore {
 
     return this.saveDocument(seedResult.title.trim(), blocks, {
       id: docId,
+      shortTitle:
+        seedResult.shortTitle ??
+        (conciseTitle !== seedResult.title.trim() ? conciseTitle : undefined),
       filename: `${docId}.md`,
       parentId: null,
       parentBlockId: null,
@@ -234,21 +276,42 @@ export class WorkspaceStore {
 
     let docNode: DocumentNode | undefined = state.documents[docId];
     const filename = docNode?.filename ?? (docId === 'index' ? 'index.md' : `${docId}.md`);
-    const filePath = path.join(this.workspaceDir, filename);
+    let filePath = path.join(this.workspaceDir, filename);
 
     let rawMarkdown: string;
     try {
       rawMarkdown = await fs.readFile(filePath, 'utf-8');
     } catch {
-      return {
-        document: null,
-        blocks: [],
-        toc: [],
-        documents: state.documents,
-        activeChat,
-        pendingEdits,
-        settings,
-      };
+      // Fallback: check if the file exists under the concise slug or requestedDocId
+      const cleanRequested = (requestedDocId ?? docId).replace(/\.md$/i, '');
+      const candidateFilenames = [
+        `${slugifyTitle(getConciseTitle(cleanRequested))}.md`,
+        `${slugifyTitle(cleanRequested)}.md`,
+        `${cleanRequested}.md`,
+      ];
+      let loadedRaw: string | null = null;
+      for (const cand of candidateFilenames) {
+        try {
+          loadedRaw = await fs.readFile(path.join(this.workspaceDir, cand), 'utf-8');
+          break;
+        } catch {
+          // continue
+        }
+      }
+
+      if (loadedRaw !== null) {
+        rawMarkdown = loadedRaw;
+      } else {
+        return {
+          document: null,
+          blocks: [],
+          toc: [],
+          documents: state.documents,
+          activeChat,
+          pendingEdits,
+          settings,
+        };
+      }
     }
 
     const blocks = parseMarkdownBlocks(rawMarkdown);
@@ -259,9 +322,11 @@ export class WorkspaceStore {
         toc.find((item) => item.level === 1)?.text ??
         toc[0]?.text ??
         'Untitled Document';
+      const conciseInferred = getConciseTitle(inferredTitle);
       docNode = {
         id: docId,
         title: inferredTitle,
+        ...(conciseInferred !== inferredTitle ? { shortTitle: conciseInferred } : {}),
         filename,
         parentId: null,
         parentBlockId: null,
@@ -291,6 +356,7 @@ export class WorkspaceStore {
     blocks: ConceptBlock[],
     options?: {
       id?: string;
+      shortTitle?: string;
       filename?: string;
       parentId?: string | null;
       parentBlockId?: string | null;
@@ -303,6 +369,11 @@ export class WorkspaceStore {
       options?.filename ?? (docId === 'index' ? 'index.md' : `${docId}.md`);
     const state = await this.loadState();
     const existing = state.documents[docId];
+
+    const resolvedShortTitle =
+      options?.shortTitle ??
+      existing?.shortTitle ??
+      (getConciseTitle(title) !== title ? getConciseTitle(title) : undefined);
 
     const resolvedPrerequisites =
       options?.prerequisites ??
@@ -317,6 +388,7 @@ export class WorkspaceStore {
     const docNode: DocumentNode = {
       id: docId,
       title,
+      ...(resolvedShortTitle ? { shortTitle: resolvedShortTitle } : {}),
       filename,
       parentId: options?.parentId ?? existing?.parentId ?? null,
       parentBlockId: options?.parentBlockId ?? existing?.parentBlockId ?? null,
@@ -748,7 +820,8 @@ export class WorkspaceStore {
     await fs.mkdir(this.workspaceDir, { recursive: true });
 
     for (const item of branchItems) {
-      const baseSlug = slugifyTitle(item.title);
+      const conciseChildTitle = getConciseTitle(item.title, item.shortTitle);
+      const baseSlug = slugifyTitle(conciseChildTitle);
       let childDocId = baseSlug;
       let suffix = 2;
       while (
@@ -780,7 +853,7 @@ export class WorkspaceStore {
           ? extractPrerequisitesFromBlock0(childBlocks[0].markdown)
           : undefined);
 
-      const linkMarkdown = `[→ Deep dive: ${childTitle}](${childFilename})`;
+      const linkMarkdown = `[→ Deep dive: ${conciseChildTitle}](${childFilename})`;
       if (!updatedTargetMarkdown.includes(linkMarkdown)) {
         updatedTargetMarkdown = `${updatedTargetMarkdown}\n\n${linkMarkdown}`;
       }
@@ -791,6 +864,7 @@ export class WorkspaceStore {
 
       if (isPrereq) {
         const normTitle = childTitle.toLowerCase();
+        const normShortTitle = conciseChildTitle.toLowerCase();
         const sortedCandidateTopics = parentPrereqList
           .filter((topic) => !claimedPrereqTopics.has(topic.trim()))
           .sort((a, b) => {
@@ -798,10 +872,14 @@ export class WorkspaceStore {
             const cleanB = b.trim();
             const exactA =
               normTitle === cleanA.toLowerCase() ||
-              childDocId === slugifyTitle(cleanA);
+              normShortTitle === cleanA.toLowerCase() ||
+              childDocId === slugifyTitle(cleanA) ||
+              childDocId === slugifyTitle(getConciseTitle(cleanA));
             const exactB =
               normTitle === cleanB.toLowerCase() ||
-              childDocId === slugifyTitle(cleanB);
+              normShortTitle === cleanB.toLowerCase() ||
+              childDocId === slugifyTitle(cleanB) ||
+              childDocId === slugifyTitle(getConciseTitle(cleanB));
             if (exactA && !exactB) return -1;
             if (!exactA && exactB) return 1;
             return cleanB.length - cleanA.length;
@@ -811,6 +889,7 @@ export class WorkspaceStore {
           const cleanTopic = topic.trim();
           const normTopic = cleanTopic.toLowerCase();
           const topicSlug = slugifyTitle(cleanTopic);
+          const conciseTopicSlug = slugifyTitle(getConciseTitle(cleanTopic));
           const topicWords = normTopic
             .split(/[^a-z0-9]+/)
             .filter(
@@ -823,14 +902,16 @@ export class WorkspaceStore {
 
           const matches =
             normTitle === normTopic ||
+            normShortTitle === normTopic ||
             normTitle.includes(normTopic) ||
             normTopic.includes(normTitle) ||
             childDocId === topicSlug ||
+            childDocId === conciseTopicSlug ||
             childDocId.includes(topicSlug) ||
             topicSlug.includes(childDocId) ||
             (topicWords.length > 0 &&
               topicWords.every(
-                (w) => normTitle.includes(w) || childDocId.includes(w)
+                (w) => normTitle.includes(w) || normShortTitle.includes(w) || childDocId.includes(w)
               ));
 
           if (matches) {
@@ -848,10 +929,16 @@ export class WorkspaceStore {
         }
       }
 
+      const resolvedShortTitle =
+        item.shortTitle?.trim() ||
+        (getConciseTitle(childTitle) !== childTitle
+          ? getConciseTitle(childTitle)
+          : undefined);
 
       const childDocNode: DocumentNode = {
         id: childDocId,
         title: childTitle,
+        ...(resolvedShortTitle ? { shortTitle: resolvedShortTitle } : {}),
         filename: childFilename,
         parentId: docId,
         parentBlockId: blockId,
@@ -932,6 +1019,7 @@ export class WorkspaceStore {
     // 2. Fallback: check existing child documents by title/slug/keyword overlap and backfill structured map
     const normTopic = cleanTopic.toLowerCase();
     const topicSlug = slugifyTitle(cleanTopic);
+    const conciseTopicSlug = slugifyTitle(getConciseTitle(cleanTopic));
     const topicWords = normTopic
       .split(/[^a-z0-9]+/)
       .filter((w) => w.length > 3 && !['with', 'from', 'into', 'that'].includes(w));
@@ -939,15 +1027,24 @@ export class WorkspaceStore {
     const existingDoc = Object.values(state.documents).find((doc) => {
       if (doc.parentId !== parentDocId) return false;
       const normTitle = doc.title.trim().toLowerCase();
+      const normShortTitle = doc.shortTitle ? doc.shortTitle.trim().toLowerCase() : '';
       const wordMatches =
         topicWords.length >= 2 &&
-        topicWords.every((w) => normTitle.includes(w) || doc.id.includes(w));
+        topicWords.every(
+          (w) => normTitle.includes(w) || normShortTitle.includes(w) || doc.id.includes(w)
+        );
       return (
         normTitle === normTopic ||
         normTitle.includes(normTopic) ||
         normTopic.includes(normTitle) ||
+        (normShortTitle &&
+          (normShortTitle === normTopic ||
+            normShortTitle.includes(normTopic) ||
+            normTopic.includes(normShortTitle))) ||
         doc.id === topicSlug ||
+        doc.id === conciseTopicSlug ||
         doc.id.includes(topicSlug) ||
+        doc.id.includes(conciseTopicSlug) ||
         wordMatches
       );
     });
@@ -1108,6 +1205,7 @@ export class WorkspaceStore {
 
     return this.saveDocument(loaded.document.title, updatedBlocks, {
       id: loaded.document.id,
+      shortTitle: loaded.document.shortTitle,
       filename: loaded.document.filename,
       parentId: loaded.document.parentId,
       parentBlockId: loaded.document.parentBlockId,
@@ -1145,6 +1243,7 @@ export class WorkspaceStore {
 
     return this.saveDocument(loaded.document.title, updatedBlocks, {
       id: loaded.document.id,
+      shortTitle: loaded.document.shortTitle,
       filename: loaded.document.filename,
       parentId: loaded.document.parentId,
       parentBlockId: loaded.document.parentBlockId,
@@ -1183,6 +1282,7 @@ export class WorkspaceStore {
 
     return this.saveDocument(loaded.document.title, updatedBlocks, {
       id: loaded.document.id,
+      shortTitle: loaded.document.shortTitle,
       filename: loaded.document.filename,
       parentId: loaded.document.parentId,
       parentBlockId: loaded.document.parentBlockId,
@@ -1207,6 +1307,7 @@ export class WorkspaceStore {
 
     return this.saveDocument(loaded.document.title, updatedBlocks, {
       id: loaded.document.id,
+      shortTitle: loaded.document.shortTitle,
       filename: loaded.document.filename,
       parentId: loaded.document.parentId,
       parentBlockId: loaded.document.parentBlockId,

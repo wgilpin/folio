@@ -1,5 +1,5 @@
 import React from 'react';
-import type { DocumentNode } from '../../shared/schema.js';
+import { getConciseTitle, type DocumentNode } from '../../shared/schema.js';
 
 export interface SubDocLinkCardProps {
   childDoc: DocumentNode;
@@ -10,12 +10,15 @@ export function SubDocLinkCard({
   childDoc,
   onSelectDocument,
 }: SubDocLinkCardProps): React.ReactElement {
+  const navTitle = getConciseTitle(childDoc.title, childDoc.shortTitle);
+
   return (
     <div style={{ marginTop: '12px' }}>
       <button
         type="button"
         data-testid={`subdoc-link-card-${childDoc.id}`}
-        aria-label={`Open sub-document ${childDoc.title}`}
+        aria-label={`Open sub-document ${navTitle}`}
+        title={childDoc.title}
         onClick={() => onSelectDocument?.(childDoc.id)}
         style={{
           display: 'inline-flex',
@@ -32,7 +35,7 @@ export function SubDocLinkCard({
           cursor: 'pointer',
         }}
       >
-        <span>→ Deep dive: {childDoc.title}</span>
+        <span>→ Deep dive: {navTitle}</span>
       </button>
     </div>
   );

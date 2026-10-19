@@ -108,4 +108,54 @@ describe('WorkspaceStore', () => {
     expect(normalizedOnDisk).toContain(`<!-- folio:block id="${loadedExternal.blocks[0].id}" -->`);
     expect(normalizedOnDisk).toContain(`<!-- folio:block id="${loadedExternal.blocks[1].id}" -->`);
   });
+
+  it('generates concise filenames and saves shortTitle when titles contain colons or qualifiers', async () => {
+    const store = new WorkspaceStore(tempDir);
+
+    // 1. Seed root document with colon in title
+    const seededRoot = await store.seedRootDocument({
+      title: 'General Relativity: Gravitation as Spacetime Geometry',
+      blocks: [
+        '<!-- folio:block id="blk_00" -->\n## 0. Prerequisites & Notation\n\nPrereqs.',
+        '## 1. Principle of Equivalence\n\nGravity is geometry.',
+        '## 2. Geodesic Motion\n\nStraight lines.',
+        '## 3. Einstein Equations\n\nCurvature equals energy.',
+      ],
+    });
+
+    expect(seededRoot.document).toBeDefined();
+    expect(seededRoot.document!.id).toBe('general-relativity');
+    expect(seededRoot.document!.filename).toBe('general-relativity.md');
+    expect(seededRoot.document!.title).toBe('General Relativity: Gravitation as Spacetime Geometry');
+    expect(seededRoot.document!.shortTitle).toBe('General Relativity');
+
+    const fileExists = await fs.stat(path.join(tempDir, 'general-relativity.md'));
+    expect(fileExists.isFile()).toBe(true);
+
+    // 2. Branch sub-document with "in Special Relativity" qualifier
+    const branched = await store.branchDocumentFromChat(
+      'general-relativity',
+      'blk_00',
+      {
+        title: 'Spacetime Geometry and Four-Vectors in Special Relativity',
+        blocks: [
+          '## 0. Prerequisites & Notation\n\nVectors and coordinates.',
+          '## 1. Minkowski Spacetime\n\nIntervals.',
+          '## 2. Four-Velocity\n\nDerivatives.',
+          '## 3. Four-Momentum\n\nConservation.',
+        ],
+      }
+    );
+
+    expect(branched.document).toBeDefined();
+    expect(branched.document!.id).toBe('spacetime-geometry-and-four-vectors');
+    expect(branched.document!.filename).toBe('spacetime-geometry-and-four-vectors.md');
+    expect(branched.document!.title).toBe('Spacetime Geometry and Four-Vectors in Special Relativity');
+    expect(branched.document!.shortTitle).toBe('Spacetime Geometry and Four-Vectors');
+
+    const childFileExists = await fs.stat(
+      path.join(tempDir, 'spacetime-geometry-and-four-vectors.md')
+    );
+    expect(childFileExists.isFile()).toBe(true);
+  });
 });

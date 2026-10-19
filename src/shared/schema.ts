@@ -30,6 +30,7 @@ export type LearnerProfile = z.infer<typeof LearnerProfileSchema>;
 export const DocumentNodeSchema = z.object({
   id: z.string(),
   title: z.string(),
+  shortTitle: z.string().optional(),
   filename: z.string(),
   parentId: z.string().nullable(),
   parentBlockId: z.string().nullable(),
@@ -102,11 +103,33 @@ export type NotebookState = z.infer<typeof NotebookStateSchema>;
 
 export const SeedResultSchema = z.object({
   title: z.string(),
+  shortTitle: z.string().optional(),
   blocks: z.array(z.string()).min(4).max(8),
   prerequisites: z.array(z.string()).optional(),
 });
 
 export type SeedResult = z.infer<typeof SeedResultSchema>;
+
+export function getConciseTitle(title: string, shortTitle?: string): string {
+  if (shortTitle && shortTitle.trim()) {
+    return shortTitle.trim();
+  }
+  let concise = title.trim();
+  if (concise.includes(':')) {
+    concise = concise.split(':')[0].trim();
+  }
+  concise = concise.replace(
+    /\s+(?:in|for)\s+[A-Z][a-zA-Z0-9\s]*$/,
+    (match) => {
+      const prefix = concise.slice(0, concise.length - match.length).trim();
+      if (prefix.split(/\s+/).length >= 2 || prefix.length >= 10) {
+        return '';
+      }
+      return match;
+    }
+  );
+  return concise.trim() || title.trim();
+}
 
 export const MultiBranchObjectSchema = z.object({
   branches: z.array(SeedResultSchema).min(1).max(6),

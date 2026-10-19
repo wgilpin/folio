@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import type {
-  ConceptBlock,
-  DocumentNode,
-  EphemeralChatThread,
-  LearnerProfile,
-  NotebookSettings,
-  PendingSuggestedEdit,
-  TocItem,
-  TopicFamiliarity,
+import {
+  getConciseTitle,
+  type ConceptBlock,
+  type DocumentNode,
+  type EphemeralChatThread,
+  type LearnerProfile,
+  type NotebookSettings,
+  type PendingSuggestedEdit,
+  type TocItem,
+  type TopicFamiliarity,
 } from '../shared/schema.js';
 import { ConceptBlockCard } from './components/ConceptBlockCard.js';
 import { GateBanner } from './components/GateBanner.js';
@@ -581,6 +582,7 @@ export function App(): React.ReactElement {
                         <button
                           type="button"
                           onClick={() => void handleSelectDocument(anc.id)}
+                          title={anc.title}
                           style={{
                             background: 'none',
                             border: 'none',
@@ -592,13 +594,13 @@ export function App(): React.ReactElement {
                             textDecoration: 'underline',
                           }}
                         >
-                          {anc.title}
+                          {getConciseTitle(anc.title, anc.shortTitle)}
                         </button>
                         <span aria-hidden="true">/</span>
                       </React.Fragment>
                     ))}
-                    <span style={{ color: '#18181B', fontWeight: 500 }}>
-                      {document.title}
+                    <span title={document.title} style={{ color: '#18181B', fontWeight: 500 }}>
+                      {getConciseTitle(document.title, document.shortTitle)}
                     </span>
                   </nav>
                 )}

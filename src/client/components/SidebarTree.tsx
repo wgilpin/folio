@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import type {
-  DocumentNode,
-  NotebookSettings,
-  PedagogicalProfileId,
-  ReasoningEffort,
-  TocItem,
+import {
+  getConciseTitle,
+  type DocumentNode,
+  type NotebookSettings,
+  type PedagogicalProfileId,
+  type ReasoningEffort,
+  type TocItem,
 } from '../../shared/schema.js';
 
 export interface SidebarTreeProps {
@@ -87,6 +88,7 @@ export function SidebarTree({
 
   const renderDocTree = (docNode: DocumentNode, depth: number): React.ReactElement => {
     const isActive = document?.id === docNode.id;
+    const navTitle = getConciseTitle(docNode.title, docNode.shortTitle);
     const children = docNode.childDocIds
       .map((childId) => documents[childId])
       .filter((c): c is DocumentNode => Boolean(c));
@@ -115,8 +117,8 @@ export function SidebarTree({
               type="button"
               aria-label={
                 isBranchCollapsed
-                  ? `Expand children of ${docNode.title}`
-                  : `Collapse children of ${docNode.title}`
+                  ? `Expand children of ${navTitle}`
+                  : `Collapse children of ${navTitle}`
               }
               onClick={() => toggleDocCollapse(docNode.id)}
               style={{
@@ -134,7 +136,8 @@ export function SidebarTree({
           )}
           <button
             type="button"
-            aria-label={`Open document ${docNode.title}`}
+            aria-label={`Open document ${navTitle}`}
+            title={docNode.title}
             onClick={() => onSelectDocument?.(docNode.id)}
             style={{
               flex: 1,
@@ -150,7 +153,7 @@ export function SidebarTree({
               cursor: 'pointer',
             }}
           >
-            {depth > 0 ? `↳ ${docNode.title}` : docNode.title}
+            {depth > 0 ? `↳ ${navTitle}` : navTitle}
           </button>
         </div>
         {children.length > 0 && !isBranchCollapsed && (

@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import katex from 'katex';
 import { marked } from 'marked';
-import type {
-  ChatMessage,
-  ConceptBlock,
-  DocumentNode,
-  LearnerProfile,
-  PendingSuggestedEdit,
-  TopicFamiliarity,
+import {
+  getConciseTitle,
+  type ChatMessage,
+  type ConceptBlock,
+  type DocumentNode,
+  type LearnerProfile,
+  type PendingSuggestedEdit,
+  type TopicFamiliarity,
 } from '../../shared/schema.js';
 import { InlineChatDrawer } from './InlineChatDrawer.js';
 import { MermaidDiagram } from './MermaidDiagram.js';
@@ -363,7 +364,11 @@ export function ConceptBlockCard({
     }
 
     const normTopic = cleanTopic.toLowerCase();
+    const conciseNormTopic = getConciseTitle(cleanTopic).toLowerCase();
     const hyphenTopic = normTopic
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    const conciseHyphenTopic = conciseNormTopic
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
     const underscoreTopic = normTopic
@@ -375,15 +380,25 @@ export function ConceptBlockCard({
 
     return childDocuments.find((doc) => {
       const normTitle = doc.title.trim().toLowerCase();
+      const normShortTitle = doc.shortTitle ? doc.shortTitle.trim().toLowerCase() : '';
       const normId = doc.id.trim().toLowerCase();
       const wordMatches =
         topicWords.length >= 2 &&
-        topicWords.every((w) => normTitle.includes(w) || normId.includes(w));
+        topicWords.every(
+          (w) => normTitle.includes(w) || normShortTitle.includes(w) || normId.includes(w)
+        );
       return (
         normTitle === normTopic ||
         normTitle.includes(normTopic) ||
         normTopic.includes(normTitle) ||
-        (hyphenTopic.length > 0 && normId.includes(hyphenTopic)) ||
+        (normShortTitle &&
+          (normShortTitle === normTopic ||
+            normShortTitle === conciseNormTopic ||
+            normShortTitle.includes(normTopic) ||
+            normTopic.includes(normShortTitle))) ||
+        (hyphenTopic.length > 0 && (normId.includes(hyphenTopic) || hyphenTopic.includes(normId))) ||
+        (conciseHyphenTopic.length > 0 &&
+          (normId.includes(conciseHyphenTopic) || conciseHyphenTopic.includes(normId))) ||
         (underscoreTopic.length > 0 && normId.includes(underscoreTopic)) ||
         wordMatches
       );

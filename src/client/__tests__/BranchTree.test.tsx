@@ -356,4 +356,119 @@ describe('Sub-Document Branching, SubDocLinkCard, SidebarTree & Breadcrumb Navig
       await screen.findByRole('heading', { name: 'Canonical Transformations' })
     ).toBeInTheDocument();
   });
+
+  it('renders concise navigation names in SidebarTree and breadcrumbs while keeping full title in h1', async () => {
+    const user = userEvent.setup();
+
+    const documentsState: Record<string, DocumentNode> = {
+      'general-relativity': {
+        id: 'general-relativity',
+        title: 'General Relativity: Gravitation as Spacetime Geometry',
+        filename: 'general-relativity.md',
+        parentId: null,
+        parentBlockId: null,
+        childDocIds: ['spacetime-geometry-and-four-vectors'],
+      },
+      'spacetime-geometry-and-four-vectors': {
+        id: 'spacetime-geometry-and-four-vectors',
+        title: 'Spacetime Geometry and Four-Vectors in Special Relativity',
+        filename: 'spacetime-geometry-and-four-vectors.md',
+        parentId: 'general-relativity',
+        parentBlockId: 'blk_00',
+        childDocIds: [],
+      },
+    };
+
+    const blocksByDoc: Record<string, ConceptBlock[]> = {
+      'general-relativity': [
+        {
+          id: 'blk_00',
+          markdown: '## 0. Prerequisites & Notation\n\nPrereqs.',
+        },
+      ],
+      'spacetime-geometry-and-four-vectors': [
+        {
+          id: 'blk_00',
+          markdown: '## 0. Prerequisites & Notation\n\nPrereqs for four-vectors.',
+        },
+      ],
+    };
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.startsWith('/api/doc') && (!init?.method || init.method === 'GET')) {
+        const urlObj = new URL(url, 'http://localhost');
+        const docId = urlObj.searchParams.get('id') || 'general-relativity';
+        const doc = documentsState[docId] || documentsState['general-relativity'];
+        return new Response(
+          JSON.stringify({
+            document: doc,
+            documents: documentsState,
+            blocks: blocksByDoc[doc.id] || [],
+            toc: [{ level: 2, text: '0. Prerequisites & Notation', blockId: 'blk_00' }],
+            modelId: 'anthropic:claude-opus-4-6',
+            settings: {
+              modelId: 'anthropic:claude-opus-4-6',
+              reasoningEffort: 'high',
+              activeProfileId: 'intuitive-physical',
+            },
+            workspaceDir: '/tmp/workspace-relativity',
+            workspaces: ['/tmp/workspace-relativity'],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 404 });
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    // 1. Root document page heading has the full title
+    expect(
+      await screen.findByRole('heading', {
+        name: 'General Relativity: Gravitation as Spacetime Geometry',
+      })
+    ).toBeInTheDocument();
+
+    // 2. Sidebar tree displays concise navigation names (dropping text after colon and "in Special Relativity")
+    const sidebar = screen.getByRole('navigation', { name: 'Notebook Sidebar' });
+    const rootNavBtn = within(sidebar).getByRole('button', {
+      name: 'Open document General Relativity',
+    });
+    expect(rootNavBtn).toHaveTextContent('General Relativity');
+    expect(rootNavBtn).toHaveAttribute(
+      'title',
+      'General Relativity: Gravitation as Spacetime Geometry'
+    );
+
+    const childNavBtn = within(sidebar).getByRole('button', {
+      name: 'Open document Spacetime Geometry and Four-Vectors',
+    });
+    expect(childNavBtn).toHaveTextContent('↳ Spacetime Geometry and Four-Vectors');
+    expect(childNavBtn).toHaveAttribute(
+      'title',
+      'Spacetime Geometry and Four-Vectors in Special Relativity'
+    );
+
+    // 3. Click child nav button to navigate
+    await user.click(childNavBtn);
+
+    // Page heading has the child document's full title
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Spacetime Geometry and Four-Vectors in Special Relativity',
+      })
+    ).toBeInTheDocument();
+
+    // Breadcrumbs show concise titles
+    const breadcrumbs = screen.getByTestId('document-breadcrumbs');
+    expect(
+      within(breadcrumbs).getByRole('button', { name: 'General Relativity' })
+    ).toBeInTheDocument();
+    expect(
+      within(breadcrumbs).getByText('Spacetime Geometry and Four-Vectors')
+    ).toBeInTheDocument();
+  });
 });
