@@ -470,6 +470,9 @@ export function ConceptBlockCard({
           isDiffPending || isHighlighted
             ? '0 2px 8px rgba(24, 24, 27, 0.06)'
             : 'none',
+        boxSizing: 'border-box',
+        minWidth: 0,
+        maxWidth: '100%',
       }}
     >
       {isEditingRaw ? (
@@ -650,12 +653,16 @@ export function ConceptBlockCard({
         </div>
       ) : (
         <div
+          className="markdown-content"
           style={{
             fontFamily: "'Newsreader', 'Charter', 'Georgia', serif",
             fontSize: '17px',
             lineHeight: 1.65,
             color: '#18181B',
             maxWidth: '68ch',
+            minWidth: 0,
+            overflowWrap: 'break-word',
+            wordBreak: 'break-word',
           }}
         >
           {segments.map((segment, index) => {
@@ -667,6 +674,8 @@ export function ConceptBlockCard({
             return (
               <div
                 key={index}
+                className="markdown-content"
+                style={{ minWidth: 0, maxWidth: '100%' }}
                 dangerouslySetInnerHTML={{ __html: html }}
               />
             );

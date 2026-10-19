@@ -692,9 +692,10 @@ export function App(): React.ReactElement {
           flexDirection: 'column',
           alignItems: 'center',
           boxSizing: 'border-box',
+          minWidth: 0,
         }}
       >
-        <div style={{ width: '100%', maxWidth: '720px' }}>
+        <div style={{ width: '100%', maxWidth: '720px', minWidth: 0 }}>
           {isLoading ? (
             <div
               style={{

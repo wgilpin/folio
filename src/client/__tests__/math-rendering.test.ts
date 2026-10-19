@@ -75,5 +75,19 @@ $$
       expect(html).toContain('katex');
       expect(html).not.toContain('color:#cc0000');
     });
+
+    it('renders wide equations as katex-display blocks', () => {
+      const markdown = '$$\\text{Score} = w_1 P(\\text{like}) + w_2 P(\\text{comment}) + w_3 P(\\text{share}) + w_4 P(\\text{skip})$$';
+      const html = renderMarkdownWithMath(markdown);
+      expect(html).toContain('katex-display');
+      expect(html).toContain('katex');
+    });
+
+    it('renders inline math expressions with katex class', () => {
+      const markdown = 'The metric is $ds^2 = -c^2 dt^2 + dx^2 + dy^2 + dz^2$ in flat spacetime.';
+      const html = renderMarkdownWithMath(markdown);
+      expect(html).toContain('class="katex"');
+      expect(html).not.toContain('katex-display');
+    });
   });
 });

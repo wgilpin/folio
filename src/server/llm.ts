@@ -91,7 +91,7 @@ export const KATEX_MATH_FORMATTING_RULES = [
   '- For non-mathematical or qualitative topics (e.g., psychology, history, geopolitics, misinformation/media studies, philosophy, literature, law, sociology), DO NOT invent artificial mathematical models, state-space vectors, or pseudo-equations. Explain using clear prose, conceptual frameworks, empirical/historical mechanisms, actor incentives, case studies, and domain-appropriate terminology.',
   '- Math Formatting Guidelines (KaTeX): When mathematical notation IS appropriate, all math is rendered using KaTeX in the browser:',
   '  - Never use unsupported LaTeX commands such as \\multicolumn or \\cline in matrices or tables.',
-  '  - For block/partitioned matrices or tensors with labeled sub-blocks, use partitioned arrays with column dividers (e.g., \\left(\\begin{array}{c|c} ... \\end{array}\\right)), \\overbrace/\\underbrace annotations, or separate labeled equation blocks.',
+  '  - For multi-term equations or multi-step derivations, split them across multiple lines (e.g. using \\begin{aligned} ... \\end{aligned} with \\\\ breaks) so formulas fit neatly on cards without requiring horizontal scrolling or overflow.',
   '  - Always ensure LaTeX braces and syntax are complete and valid.',
 ].join('\n');
 

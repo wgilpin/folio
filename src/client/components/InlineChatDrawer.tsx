@@ -118,7 +118,14 @@ export function InlineChatDrawer({
                 <div style={{ lineHeight: 1.5 }}>{msg.content}</div>
               ) : (
                 <div
-                  style={{ lineHeight: 1.55 }}
+                  className="markdown-content"
+                  style={{
+                    lineHeight: 1.55,
+                    minWidth: 0,
+                    maxWidth: '100%',
+                    overflowWrap: 'break-word',
+                    wordBreak: 'break-word',
+                  }}
                   dangerouslySetInnerHTML={{
                     __html: renderMarkdownWithMath(msg.content),
                   }}
