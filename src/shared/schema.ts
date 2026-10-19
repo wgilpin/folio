@@ -138,14 +138,14 @@ export const SeedResultSchema = z.object({
     .array(z.string())
     .optional()
     .describe(
-      '2 to 5 upstream background topics assumed BEFORE reading this document. Must NOT include any topic, doctrine, or concept covered in `toc`.'
+      '2 to 5 upstream background topics assumed BEFORE reading this document. Prerequisites may be referenced or applied in the body, but must NOT be topics that a section in `toc` is dedicated to explaining in detail.'
     ),
   blocks: z
     .array(z.string())
     .min(4)
     .max(8)
     .describe(
-      'Self-contained Markdown concept blocks: Block 0 is "## Prerequisites & Foundations" (listing only `prerequisites`, never defining concepts taught in `toc`), followed by the body blocks matching `toc`.'
+      'Self-contained Markdown concept blocks: Block 0 is "## Prerequisites & Foundations" (listing only upstream `prerequisites`, never defining concepts that have a dedicated section in `toc` explaining them), followed by the body blocks matching `toc`.'
     ),
 });
 

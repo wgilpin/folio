@@ -293,6 +293,46 @@ describe('markdown block parser and serializer', () => {
       expect(sanitizedBlocks[0].markdown).not.toContain('Reflexive Control');
       expect(sanitizedBlocks[0].markdown).not.toContain('Discourse Power');
     });
+
+    it('preserves prerequisites that are merely referenced in application or transition headings', async () => {
+      const { sanitizePrerequisitesAndBlock0 } = await import('../markdown.js');
+
+      const blocks = [
+        {
+          id: 'blk_00',
+          markdown: [
+            '## 0. Prerequisites & Notation',
+            '',
+            '- **Lagrangian Mechanics:** Action principle and generalized coordinates.',
+            '- **Vector Calculus:** Gradients, divergence, and curl.',
+          ].join('\n'),
+        },
+        {
+          id: 'blk_02',
+          markdown:
+            '## 1. From Lagrangian Mechanics to the Hamiltonian\n\nLegendre transformation.',
+        },
+        {
+          id: 'blk_03',
+          markdown:
+            '## 2. Applying Vector Calculus to Phase Space Flow\n\nLiouville theorem.',
+        },
+      ];
+
+      const { blocks: sanitizedBlocks, prerequisites } =
+        sanitizePrerequisitesAndBlock0(
+          blocks,
+          ['Lagrangian Mechanics', 'Vector Calculus'],
+          { docTitle: 'Hamiltonian Mechanics' }
+        );
+
+      expect(prerequisites).toEqual([
+        'Lagrangian Mechanics',
+        'Vector Calculus',
+      ]);
+      expect(sanitizedBlocks[0].markdown).toContain('**Lagrangian Mechanics:**');
+      expect(sanitizedBlocks[0].markdown).toContain('**Vector Calculus:**');
+    });
   });
 });
 

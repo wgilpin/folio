@@ -250,16 +250,15 @@ export function isTopicCoveredByBodyOrTitle(
   bodyHeadings: string[],
   docTitle?: string
 ): boolean {
-  const cleanTopic = normalizePhraseForOverlap(topic);
+  const cleanTopic = normalizePhraseForOverlap(topic).replace(/^the\s+/, '');
   if (cleanTopic.length < 4) {
     return false;
   }
 
-  const escapedTopic = cleanTopic.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const boundaryRe = new RegExp(`(?:^|[^a-z0-9])${escapedTopic}(?:$|[^a-z0-9])`, 'i');
-
   if (docTitle) {
-    const cleanDocTitle = normalizePhraseForOverlap(docTitle.split(':')[0] ?? docTitle);
+    const cleanDocTitle = normalizePhraseForOverlap(
+      docTitle.split(':')[0] ?? docTitle
+    ).replace(/^the\s+/, '');
     if (cleanDocTitle.length >= 4 && cleanDocTitle === cleanTopic) {
       return true;
     }
@@ -268,7 +267,15 @@ export function isTopicCoveredByBodyOrTitle(
   for (const rawHeading of bodyHeadings) {
     const cleanHeading = normalizePhraseForOverlap(rawHeading);
     if (!cleanHeading) continue;
-    if (cleanHeading === cleanTopic || boundaryRe.test(cleanHeading)) {
+
+    // Split heading into its standalone subject clauses (e.g. "2. Russian Doctrine: Epistemic Chaos, Reflexive Control, and Domestic Fracture")
+    // so we match when a section is dedicated to the topic, not when a heading merely says "Applying X to Y" or "From X to Y".
+    const clauses = cleanHeading
+      .split(/\s*(?:[:;—–-]|\band\b|,)\s*/)
+      .map((clause) => clause.replace(/^the\s+/, '').trim())
+      .filter((clause) => clause.length > 0);
+
+    if (clauses.some((clause) => clause === cleanTopic)) {
       return true;
     }
   }
