@@ -137,4 +137,100 @@ describe('markdown block parser and serializer', () => {
       { level: 2, text: '2. Euler-Lagrange Equations', blockId: 'blk_02' },
     ]);
   });
+
+  describe('splitMultiSectionMarkdown', () => {
+    it('returns empty array for empty or whitespace-only markdown', async () => {
+      const { splitMultiSectionMarkdown } = await import('../markdown.js');
+      expect(splitMultiSectionMarkdown('')).toEqual([]);
+      expect(splitMultiSectionMarkdown('   \n\n  ')).toEqual([]);
+    });
+
+    it('returns single section if only 1 heading or prose without multi-sections', async () => {
+      const { splitMultiSectionMarkdown } = await import('../markdown.js');
+      const md = '## Single Section\n\nJust some prose here.';
+      expect(splitMultiSectionMarkdown(md)).toEqual([md]);
+    });
+
+    it('splits on multiple ## headings outside code fences', async () => {
+      const { splitMultiSectionMarkdown } = await import('../markdown.js');
+      const md = [
+        '# Topic Title',
+        '## 1. Linear Algebra',
+        'Vectors and matrices.',
+        '```',
+        '## Code comment that should not split',
+        '```',
+        '## 2. Multivariable Calculus',
+        'Partial derivatives.',
+      ].join('\n');
+
+      const result = splitMultiSectionMarkdown(md);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBe(
+        '# Topic Title\n\n## 1. Linear Algebra\nVectors and matrices.\n```\n## Code comment that should not split\n```'
+      );
+      expect(result[1]).toBe(
+        '## 2. Multivariable Calculus\nPartial derivatives.'
+      );
+    });
+
+    it('splits on multiple ### headings and promotes them to ##', async () => {
+      const { splitMultiSectionMarkdown } = await import('../markdown.js');
+      const md = [
+        '### 1. Vector Spaces',
+        'Linear combinations.',
+        '### 2. Inner Products',
+        'Angles and lengths.',
+        '### 3. Eigenvalues',
+        'Characteristic polynomial.',
+      ].join('\n');
+
+      const result = splitMultiSectionMarkdown(md);
+      expect(result).toHaveLength(3);
+      expect(result[0]).toBe('## 1. Vector Spaces\nLinear combinations.');
+      expect(result[1]).toBe('## 2. Inner Products\nAngles and lengths.');
+      expect(result[2]).toBe('## 3. Eigenvalues\nCharacteristic polynomial.');
+    });
+
+    it('splits on numbered bold headers and promotes them to ##', async () => {
+      const { splitMultiSectionMarkdown } = await import('../markdown.js');
+      const md = [
+        '1. **Vector Spaces**: Linear combinations and bases.',
+        '',
+        '2. **Inner Products**: Angles, norms, and dot products.',
+        '',
+        '3. **Eigenvalues**: Characteristic polynomial and diagonalizability.',
+      ].join('\n');
+
+      const result = splitMultiSectionMarkdown(md);
+      expect(result).toHaveLength(3);
+      expect(result[0]).toBe(
+        '## 1. Vector Spaces\n\nLinear combinations and bases.'
+      );
+      expect(result[1]).toBe(
+        '## 2. Inner Products\n\nAngles, norms, and dot products.'
+      );
+      expect(result[2]).toBe(
+        '## 3. Eigenvalues\n\nCharacteristic polynomial and diagonalizability.'
+      );
+    });
+
+    it('does not split a single ## concept block that contains a numbered list of bolded items in its body', async () => {
+      const { splitMultiSectionMarkdown } = await import('../markdown.js');
+      const md = [
+        '## 1. Symplectic Structure',
+        '',
+        'A symplectic form $\\omega$ satisfies the following properties:',
+        '',
+        '1. **Closed**: $d\\omega = 0$.',
+        '2. **Non-degenerate**: $\\omega(u, v) = 0$ for all $v$ implies $u = 0$.',
+      ].join('\n');
+
+      const result = splitMultiSectionMarkdown(md);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toBe(md);
+    });
+  });
 });
+
+

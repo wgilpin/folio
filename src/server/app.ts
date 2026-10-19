@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import {
+  BranchResultSchema,
   IntegrateResultSchema,
   PedagogicalProfileIdSchema,
   ReasoningEffortSchema,
@@ -22,7 +23,8 @@ import {
   type IntegrateGenerator,
   type SeedGenerator,
 } from './llm.js';
-import { generateBlockId } from './markdown.js';
+import { generateBlockId, isPrerequisiteBlock } from './markdown.js';
+
 import { LearnerProfileStore } from './profile.js';
 import { WorkspaceStore } from './store.js';
 
@@ -764,7 +766,12 @@ export function createApp(options: CreateAppOptions): Hono {
       const settings = await store.getSettings(getDefaultModelId());
       const profile = await profileStore.loadProfile();
 
-      const branchResult = SeedResultSchema.parse(
+      const initialParentDoc = (await store.loadDocument(docId)).document;
+      const initialPrereqDocIds = {
+        ...(initialParentDoc?.prerequisiteDocIds ?? {}),
+      };
+
+      const branchResult = BranchResultSchema.parse(
         await branchGenerator({
           context,
           messages: activeChat.messages,
@@ -783,6 +790,22 @@ export function createApp(options: CreateAppOptions): Hono {
         branchResult
       );
 
+      let updatedProfile = profile;
+      if (blockId === 'blk_00' || isPrerequisiteBlock(context.targetBlock)) {
+        const parentDoc = created.documents[docId];
+        const currentPrereqDocIds = parentDoc?.prerequisiteDocIds ?? {};
+        for (const [topic, childId] of Object.entries(currentPrereqDocIds)) {
+          if (childId !== initialPrereqDocIds[topic]) {
+            if (updatedProfile.topics[topic] !== 'known') {
+              updatedProfile = await profileStore.setTopicStatus(
+                topic,
+                'learning'
+              );
+            }
+          }
+        }
+      }
+
       return c.json({
         document: created.document,
         blocks: created.blocks,
@@ -793,9 +816,10 @@ export function createApp(options: CreateAppOptions): Hono {
         settings,
         workspaceDir: store.workspaceDir,
         workspaces: Array.from(knownWorkspaces),
-        profile,
+        profile: updatedProfile,
         modelId: settings.modelId,
       });
+
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Failed to branch sub-document';

@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import {
   NotebookSettingsSchema,
   NotebookStateSchema,
+  type BranchResult,
   type ConceptBlock,
   type DocumentNode,
   type EphemeralChatThread,
@@ -17,9 +18,12 @@ import {
   extractPrerequisitesFromBlock0,
   extractToc,
   generateBlockId,
+  isPrerequisiteBlock,
   parseMarkdownBlocks,
   serializeMarkdownBlocks,
+  splitMultiSectionMarkdown,
 } from './markdown.js';
+
 
 export interface LoadedDocument {
   document: DocumentNode | null;
@@ -467,14 +471,138 @@ export class WorkspaceStore {
       index < loaded.blocks.length - 1 ? loaded.blocks[index + 1] : null;
 
     const targetBlock = loaded.blocks[index];
-    const updatedTargetBlock: ConceptBlock =
+    const rawInsertedList = [...integrateResult.insertedBlocksMarkdown];
+    let updatedTargetBlock: ConceptBlock = targetBlock;
+
+    if (isPrerequisiteBlock(targetBlock)) {
+      const existingPrereqs =
+        loaded.document.prerequisites &&
+        loaded.document.prerequisites.length > 0
+          ? [...loaded.document.prerequisites]
+          : extractPrerequisitesFromBlock0(targetBlock.markdown);
+      const existingPrereqLower = new Set(
+        existingPrereqs.map((p) => p.trim().toLowerCase())
+      );
+
+      const origNormalized = targetBlock.markdown.replace(/\r\n/g, '\n').trim();
+      const candNormalized =
+        integrateResult.updatedBlockMarkdown !== null
+          ? integrateResult.updatedBlockMarkdown.replace(/\r\n/g, '\n').trim()
+          : '';
+
+      const origTrimmedLines = new Set(
+        origNormalized
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((l) => l.length > 0)
+      );
+      const candLines = candNormalized ? candNormalized.split('\n') : [];
+      const addedNonEmptyLines = candLines
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0 && !origTrimmedLines.has(l));
+
+      const explicitNewPrereqs = (integrateResult.addedPrerequisites ?? [])
+        .map((p) => p.trim())
+        .filter(
+          (p) => p.length > 0 && !existingPrereqLower.has(p.toLowerCase())
+        );
+
+      const bulletExtractedNewPrereqs =
+        addedNonEmptyLines.length > 0 &&
+        addedNonEmptyLines.every((l) => /^[-*]\s+/.test(l))
+          ? extractPrerequisitesFromBlock0(addedNonEmptyLines.join('\n')).filter(
+              (p) => !existingPrereqLower.has(p.toLowerCase())
+            )
+          : [];
+
+      const newPrereqs =
+        explicitNewPrereqs.length > 0
+          ? explicitNewPrereqs
+          : bulletExtractedNewPrereqs;
+
+      if (newPrereqs.length > 0) {
+        const addedBulletLines = addedNonEmptyLines.filter((l) =>
+          /^[-*]\s+/.test(l)
+        );
+        const addedNonBulletLines = candLines.filter((l) => {
+          const t = l.trim();
+          return (
+            t.length === 0 ||
+            (!origTrimmedLines.has(t) && !/^[-*]\s+/.test(t))
+          );
+        });
+
+        if (
+          candNormalized.length > 0 &&
+          addedNonEmptyLines.every((l) => /^[-*]\s+/.test(l))
+        ) {
+          updatedTargetBlock = {
+            id: targetBlock.id,
+            markdown: candNormalized,
+          };
+        } else if (addedBulletLines.length > 0) {
+          updatedTargetBlock = {
+            id: targetBlock.id,
+            markdown: `${origNormalized}\n${addedBulletLines.join('\n')}`,
+          };
+          const extraProse = addedNonBulletLines
+            .join('\n')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+          if (extraProse && rawInsertedList.length === 0) {
+            rawInsertedList.push(extraProse);
+          }
+        } else {
+          const generatedBullets = newPrereqs.map((topic) => `- **${topic}**`);
+          updatedTargetBlock = {
+            id: targetBlock.id,
+            markdown: `${origNormalized}\n${generatedBullets.join('\n')}`,
+          };
+        }
+
+        const mergedPrereqs = [...existingPrereqs];
+        for (const topic of [
+          ...newPrereqs,
+          ...extractPrerequisitesFromBlock0(updatedTargetBlock.markdown),
+        ]) {
+          if (
+            !mergedPrereqs.some(
+              (p) => p.toLowerCase() === topic.toLowerCase()
+            )
+          ) {
+            mergedPrereqs.push(topic);
+          }
+        }
+        loaded.document = {
+          ...loaded.document,
+          prerequisites: mergedPrereqs,
+        };
+      } else if (candNormalized.length > 0 && candNormalized !== origNormalized) {
+        // Not adding prerequisites: do NOT expand blk_00; create a new card below instead
+        if (rawInsertedList.length === 0) {
+          const extractedNewCard = candNormalized.startsWith(origNormalized)
+            ? candNormalized.slice(origNormalized.length).trim()
+            : candLines
+                .filter((l) => {
+                  const t = l.trim();
+                  return t.length === 0 || !origTrimmedLines.has(t);
+                })
+                .join('\n')
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
+
+          rawInsertedList.push(extractedNewCard || candNormalized);
+        }
+      }
+    } else if (
       integrateResult.updatedBlockMarkdown !== null &&
       integrateResult.updatedBlockMarkdown.trim().length > 0
-        ? {
-            id: targetBlock.id,
-            markdown: integrateResult.updatedBlockMarkdown.trim(),
-          }
-        : targetBlock;
+    ) {
+      updatedTargetBlock = {
+        id: targetBlock.id,
+        markdown: integrateResult.updatedBlockMarkdown.trim(),
+      };
+    }
 
     const workingBlocks: ConceptBlock[] = [
       ...loaded.blocks.slice(0, index),
@@ -483,7 +611,10 @@ export class WorkspaceStore {
     ];
 
     const insertedBlocks: ConceptBlock[] = [];
-    for (const rawInserted of integrateResult.insertedBlocksMarkdown) {
+    const expandedInsertedList = rawInsertedList.flatMap((raw) =>
+      splitMultiSectionMarkdown(raw)
+    );
+    for (const rawInserted of expandedInsertedList) {
       const trimmed = rawInserted.trim();
       if (!trimmed) continue;
       const newId = this.nextAvailableBlockId([
@@ -495,6 +626,7 @@ export class WorkspaceStore {
         markdown: trimmed,
       });
     }
+
 
     const finalBlocks: ConceptBlock[] = [
       ...workingBlocks.slice(0, index + 1),
@@ -561,7 +693,7 @@ export class WorkspaceStore {
   async branchDocumentFromChat(
     docId: string,
     blockId: string,
-    branchResult: SeedResult
+    branchResult: BranchResult
   ): Promise<LoadedDocument> {
     const state = await this.loadState();
     if (state.pendingEdits.some((e) => e.docId === docId)) {
@@ -578,88 +710,195 @@ export class WorkspaceStore {
       throw new Error(`Block not found: ${blockId}`);
     }
 
-    const baseSlug = slugifyTitle(branchResult.title);
-    let childDocId = baseSlug;
-    let suffix = 2;
-    while (state.documents[childDocId] || childDocId === docId) {
-      childDocId = `${baseSlug}-${suffix}`;
-      suffix += 1;
+    const branchItems: SeedResult[] = Array.isArray(branchResult)
+      ? branchResult
+      : 'branches' in branchResult
+        ? branchResult.branches
+        : [branchResult];
+
+    if (branchItems.length === 0) {
+      throw new Error('No branches to create');
     }
 
-    const childFilename = `${childDocId}.md`;
-    const childTitle = branchResult.title.trim();
-
-    const childBlocks: ConceptBlock[] = branchResult.blocks.map(
-      (markdown, index) => ({
-        id:
-          index === 0 && /^#{1,3}\s*0\b|prerequisites/i.test(markdown)
-            ? 'blk_00'
-            : generateBlockId(index),
-        markdown: markdown.trim(),
-      })
-    );
-
-    const resolvedPrerequisites =
-      branchResult.prerequisites ??
-      (childBlocks[0]?.id === 'blk_00'
-        ? extractPrerequisitesFromBlock0(childBlocks[0].markdown)
-        : undefined);
-
     const parentTargetBlock = parentLoaded.blocks[blockIndex];
-    const linkMarkdown = `[→ Deep dive: ${childTitle}](${childFilename})`;
-    const updatedParentBlocks: ConceptBlock[] = [...parentLoaded.blocks];
-    updatedParentBlocks[blockIndex] = {
-      id: parentTargetBlock.id,
-      markdown: `${parentTargetBlock.markdown.trim()}\n\n${linkMarkdown}`,
-    };
+    const isPrereq =
+      isPrerequisiteBlock(parentTargetBlock) || blockId === 'blk_00';
+    const parentPrereqList =
+      parentLoaded.document.prerequisites &&
+      parentLoaded.document.prerequisites.length > 0
+        ? [...parentLoaded.document.prerequisites]
+        : extractPrerequisitesFromBlock0(parentTargetBlock.markdown);
 
     const parentDocNode: DocumentNode = {
       ...parentLoaded.document,
-      childDocIds: parentLoaded.document.childDocIds.includes(childDocId)
-        ? parentLoaded.document.childDocIds
-        : [...parentLoaded.document.childDocIds, childDocId],
-    };
-
-    const childDocNode: DocumentNode = {
-      id: childDocId,
-      title: childTitle,
-      filename: childFilename,
-      parentId: docId,
-      parentBlockId: blockId,
-      childDocIds: [],
-      ...(resolvedPrerequisites && resolvedPrerequisites.length > 0
-        ? { prerequisites: resolvedPrerequisites }
+      childDocIds: [...parentLoaded.document.childDocIds],
+      ...(isPrereq &&
+      (!parentLoaded.document.prerequisites ||
+        parentLoaded.document.prerequisites.length === 0) &&
+      parentPrereqList.length > 0
+        ? { prerequisites: parentPrereqList }
         : {}),
     };
 
-    state.documents[docId] = parentDocNode;
-    state.documents[childDocId] = childDocNode;
-    state.activeDocId = childDocId;
-    state.activeChat = null;
+    let updatedTargetMarkdown = parentTargetBlock.markdown.trim();
+    const allocatedDocIds = new Set<string>();
+    const claimedPrereqTopics = new Set<string>();
+    const createdDocs: { docNode: DocumentNode; blocks: ConceptBlock[] }[] = [];
 
     await fs.mkdir(this.workspaceDir, { recursive: true });
+
+    for (const item of branchItems) {
+      const baseSlug = slugifyTitle(item.title);
+      let childDocId = baseSlug;
+      let suffix = 2;
+      while (
+        state.documents[childDocId] ||
+        childDocId === docId ||
+        allocatedDocIds.has(childDocId)
+      ) {
+        childDocId = `${baseSlug}-${suffix}`;
+        suffix += 1;
+      }
+      allocatedDocIds.add(childDocId);
+
+      const childFilename = `${childDocId}.md`;
+      const childTitle = item.title.trim();
+
+      const childBlocks: ConceptBlock[] = item.blocks.map(
+        (markdown, index) => ({
+          id:
+            index === 0 && /^#{1,3}\s*0\b|prerequisites/i.test(markdown)
+              ? 'blk_00'
+              : generateBlockId(index),
+          markdown: markdown.trim(),
+        })
+      );
+
+      const resolvedPrerequisites =
+        item.prerequisites ??
+        (childBlocks[0]?.id === 'blk_00'
+          ? extractPrerequisitesFromBlock0(childBlocks[0].markdown)
+          : undefined);
+
+      const linkMarkdown = `[→ Deep dive: ${childTitle}](${childFilename})`;
+      if (!updatedTargetMarkdown.includes(linkMarkdown)) {
+        updatedTargetMarkdown = `${updatedTargetMarkdown}\n\n${linkMarkdown}`;
+      }
+
+      if (!parentDocNode.childDocIds.includes(childDocId)) {
+        parentDocNode.childDocIds.push(childDocId);
+      }
+
+      if (isPrereq) {
+        const normTitle = childTitle.toLowerCase();
+        const sortedCandidateTopics = parentPrereqList
+          .filter((topic) => !claimedPrereqTopics.has(topic.trim()))
+          .sort((a, b) => {
+            const cleanA = a.trim();
+            const cleanB = b.trim();
+            const exactA =
+              normTitle === cleanA.toLowerCase() ||
+              childDocId === slugifyTitle(cleanA);
+            const exactB =
+              normTitle === cleanB.toLowerCase() ||
+              childDocId === slugifyTitle(cleanB);
+            if (exactA && !exactB) return -1;
+            if (!exactA && exactB) return 1;
+            return cleanB.length - cleanA.length;
+          });
+
+        for (const topic of sortedCandidateTopics) {
+          const cleanTopic = topic.trim();
+          const normTopic = cleanTopic.toLowerCase();
+          const topicSlug = slugifyTitle(cleanTopic);
+          const topicWords = normTopic
+            .split(/[^a-z0-9]+/)
+            .filter(
+              (w) =>
+                w.length > 2 &&
+                !['with', 'from', 'into', 'that', 'and', 'the', 'for'].includes(
+                  w
+                )
+            );
+
+          const matches =
+            normTitle === normTopic ||
+            normTitle.includes(normTopic) ||
+            normTopic.includes(normTitle) ||
+            childDocId === topicSlug ||
+            childDocId.includes(topicSlug) ||
+            topicSlug.includes(childDocId) ||
+            (topicWords.length > 0 &&
+              topicWords.every(
+                (w) => normTitle.includes(w) || childDocId.includes(w)
+              ));
+
+          if (matches) {
+            claimedPrereqTopics.add(cleanTopic);
+            parentDocNode.prerequisiteDocIds = {
+              ...(parentDocNode.prerequisiteDocIds ?? {}),
+              [cleanTopic]: childDocId,
+            };
+            state.topicDocIds = {
+              ...(state.topicDocIds ?? {}),
+              [cleanTopic]: childDocId,
+            };
+            break;
+          }
+        }
+      }
+
+
+      const childDocNode: DocumentNode = {
+        id: childDocId,
+        title: childTitle,
+        filename: childFilename,
+        parentId: docId,
+        parentBlockId: blockId,
+        childDocIds: [],
+        ...(resolvedPrerequisites && resolvedPrerequisites.length > 0
+          ? { prerequisites: resolvedPrerequisites }
+          : {}),
+      };
+
+      state.documents[childDocId] = childDocNode;
+      createdDocs.push({ docNode: childDocNode, blocks: childBlocks });
+
+      await fs.writeFile(
+        path.join(this.workspaceDir, childFilename),
+        serializeMarkdownBlocks(childBlocks),
+        'utf-8'
+      );
+    }
+
+    const updatedParentBlocks: ConceptBlock[] = [...parentLoaded.blocks];
+    updatedParentBlocks[blockIndex] = {
+      id: parentTargetBlock.id,
+      markdown: updatedTargetMarkdown,
+    };
+
+    state.documents[docId] = parentDocNode;
+    state.activeDocId = createdDocs[0].docNode.id;
+    state.activeChat = null;
+
     await fs.writeFile(
       path.join(this.workspaceDir, parentDocNode.filename),
       serializeMarkdownBlocks(updatedParentBlocks),
       'utf-8'
     );
-    await fs.writeFile(
-      path.join(this.workspaceDir, childFilename),
-      serializeMarkdownBlocks(childBlocks),
-      'utf-8'
-    );
     await this.saveState(state);
 
     return {
-      document: childDocNode,
-      blocks: childBlocks,
-      toc: extractToc(childBlocks),
+      document: createdDocs[0].docNode,
+      blocks: createdDocs[0].blocks,
+      toc: extractToc(createdDocs[0].blocks),
       documents: state.documents,
       activeChat: null,
       pendingEdits: [],
       settings: this.resolveStateSettings(state),
     };
   }
+
 
   async findExistingPrerequisiteDocument(
     parentDocId: string,

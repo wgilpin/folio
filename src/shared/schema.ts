@@ -108,9 +108,23 @@ export const SeedResultSchema = z.object({
 
 export type SeedResult = z.infer<typeof SeedResultSchema>;
 
+export const MultiBranchObjectSchema = z.object({
+  branches: z.array(SeedResultSchema).min(1).max(6),
+});
+
+export const BranchResultSchema = z.union([
+  SeedResultSchema,
+  MultiBranchObjectSchema,
+  z.array(SeedResultSchema).min(1).max(6),
+]);
+
+export type BranchResult = z.infer<typeof BranchResultSchema>;
+
+
 export const IntegrateResultSchema = z.object({
   updatedBlockMarkdown: z.string().nullable(),
   insertedBlocksMarkdown: z.array(z.string()),
+  addedPrerequisites: z.array(z.string()).optional(),
   suggestedEdits: z.array(
     z.object({
       targetBlockId: z.string(),

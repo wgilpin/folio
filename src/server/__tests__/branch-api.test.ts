@@ -282,4 +282,212 @@ describe('Sub-document Branching API & Multi-level Ancestor Context (Epic 01)', 
     expect(getBody.documents[grandchildDocId].parentId).toBe(childDocId);
     expect(getBody.documents[grandchildDocId].parentBlockId).toBe('blk_02');
   });
+
+  it('branching a chat on blk_00 with multiple prerequisites creates N separate child docs, links in blk_00 and prerequisiteDocIds, and marks topics learning in profile', async () => {
+    const initialBlk00 =
+      '## 0. Prerequisites & Notation\n\n- **Linear Algebra**: Matrix transformations.\n- **Vector Calculus**: Gradients.\n- **Probability**: Distributions.';
+
+    await store.saveDocument(
+      'Deep Learning',
+      [
+        {
+          id: 'blk_00',
+          markdown: initialBlk00,
+        },
+        {
+          id: 'blk_01',
+          markdown: '## 1. Backpropagation\n\nChain rule on computation graphs.',
+        },
+      ],
+      {
+        id: 'index',
+        filename: 'index.md',
+        prerequisites: ['Linear Algebra', 'Vector Calculus', 'Probability'],
+      }
+    );
+
+    await store.appendChatMessage(
+      'index',
+      'blk_00',
+      'anthropic:claude-opus-4-6',
+      'Can you explain Linear Algebra, Vector Calculus, and Probability in detail?',
+      'Here are detailed treatments of all three prerequisites.'
+    );
+
+    const mockBranchGenerator: BranchGenerator = async () => ({
+      branches: [
+        {
+          title: 'Linear Algebra Deep Dive',
+          blocks: [
+            '## 0. Prerequisites & Notation\n\nReal vectors and inner products.',
+            '## 1. Matrix Transformations\n\nLinear maps between vector spaces.',
+            '## 2. Eigendecomposition\n\nDiagonalizing symmetric matrices.',
+            '## 3. Singular Value Decomposition\n\nLow-rank factorization.',
+          ],
+        },
+        {
+          title: 'Vector Calculus Foundations',
+          blocks: [
+            '## 0. Prerequisites & Notation\n\nScalar and vector fields.',
+            '## 1. Gradient Vectors\n\nSteepest ascent and Jacobians.',
+            '## 2. Hessian Matrices\n\nSecond-order curvature.',
+            '## 3. Multivariate Chain Rule\n\nComposition of differentiable maps.',
+          ],
+        },
+        {
+          title: 'Probability Theory',
+          blocks: [
+            '## 0. Prerequisites & Notation\n\nProbability spaces $(\\Omega, \\mathcal{F}, P)$.',
+            '## 1. Random Variables\n\nDensities and cumulative distributions.',
+            '## 2. Expectation & Covariance\n\nMoments and linear combinations.',
+            '## 3. Information Theory Basics\n\nEntropy and KL divergence.',
+          ],
+        },
+      ],
+    });
+
+    const app = createApp({
+      workspaceDir: tempDir,
+      branchGenerator: mockBranchGenerator,
+      modelId: 'anthropic:claude-opus-4-6',
+    });
+
+    const res = await app.request('/api/blocks/blk_00/branch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ docId: 'index' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    const expectedDocIds = [
+      'linear-algebra-deep-dive',
+      'vector-calculus-foundations',
+      'probability-theory',
+    ];
+
+    // 1. All 3 child .md files created on disk
+    for (const childId of expectedDocIds) {
+      const filePath = path.join(tempDir, `${childId}.md`);
+      const exists = await fs
+        .access(filePath)
+        .then(() => true)
+        .catch(() => false);
+      expect(exists).toBe(true);
+    }
+
+    // 2. Registers all 3 in documents map
+    for (const childId of expectedDocIds) {
+      expect(body.documents[childId]).toBeDefined();
+      expect(body.documents[childId].parentId).toBe('index');
+      expect(body.documents[childId].parentBlockId).toBe('blk_00');
+    }
+
+    // 3. Parent doc childDocIds includes all 3
+    for (const childId of expectedDocIds) {
+      expect(body.documents['index'].childDocIds).toContain(childId);
+    }
+
+    // 4. prerequisiteDocIds mapped for each matched prerequisite
+    expect(body.documents['index'].prerequisiteDocIds).toEqual({
+      'Linear Algebra': 'linear-algebra-deep-dive',
+      'Vector Calculus': 'vector-calculus-foundations',
+      Probability: 'probability-theory',
+    });
+
+    // 5. Appends all 3 deep dive links to parent target block
+    const parentLoaded = await store.loadDocument('index');
+    const blk00Markdown = parentLoaded.blocks[0].markdown;
+    expect(blk00Markdown).toContain(
+      '[→ Deep dive: Linear Algebra Deep Dive](linear-algebra-deep-dive.md)'
+    );
+    expect(blk00Markdown).toContain(
+      '[→ Deep dive: Vector Calculus Foundations](vector-calculus-foundations.md)'
+    );
+    expect(blk00Markdown).toContain(
+      '[→ Deep dive: Probability Theory](probability-theory.md)'
+    );
+
+    // 6. Learner profile topics updated to 'learning'
+    expect(body.profile.topics['Linear Algebra']).toBe('learning');
+    expect(body.profile.topics['Vector Calculus']).toBe('learning');
+    expect(body.profile.topics['Probability']).toBe('learning');
+  });
+
+  it('does not allow overlapping prerequisite topics like "Calculus" and "Vector Calculus" to both be claimed by a single branched document', async () => {
+    const blk00WithOverlappingPrereqs =
+      '## 0. Prerequisites & Notation\n\n- **Calculus**: Derivatives and integrals.\n- **Vector Calculus**: Gradients, divergence, and curl.';
+
+    await store.saveDocument(
+      'Electrodynamics',
+      [
+        {
+          id: 'blk_00',
+          markdown: blk00WithOverlappingPrereqs,
+        },
+        {
+          id: 'blk_01',
+          markdown:
+            '## 1. Maxwell Equations\n\nDifferential form of Gauss and Faraday laws.',
+        },
+      ],
+      {
+        id: 'index',
+        filename: 'index.md',
+        prerequisites: ['Calculus', 'Vector Calculus'],
+      }
+    );
+
+    await store.appendChatMessage(
+      'index',
+      'blk_00',
+      'anthropic:claude-opus-4-6',
+      'Deep dive into Vector Calculus',
+      'Here is a dedicated deep dive on Vector Calculus.'
+    );
+
+    const mockBranchGenerator: BranchGenerator = async () => ({
+      branches: [
+        {
+          title: 'Vector Calculus Foundations',
+          blocks: [
+            '## 0. Prerequisites & Notation\n\nMultivariable space.',
+            '## 1. Gradient and Curl\n\nVector differential operators.',
+            '## 2. Divergence Theorem\n\nFlux through closed surfaces.',
+            '## 3. Stokes Theorem\n\nLine integrals and surface curl.',
+          ],
+        },
+      ],
+    });
+
+    const app = createApp({
+      workspaceDir: tempDir,
+      branchGenerator: mockBranchGenerator,
+      modelId: 'anthropic:claude-opus-4-6',
+    });
+
+    const res = await app.request('/api/blocks/blk_00/branch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ docId: 'index' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    // Verify only 'Vector Calculus' was claimed by 'vector-calculus-foundations', and 'Calculus' was NOT claimed
+    expect(body.documents['index'].prerequisiteDocIds).toEqual({
+      'Vector Calculus': 'vector-calculus-foundations',
+    });
+    expect(
+      body.documents['index'].prerequisiteDocIds['Calculus']
+    ).toBeUndefined();
+
+    // Profile should only mark 'Vector Calculus' as 'learning', not 'Calculus'
+    expect(body.profile.topics['Vector Calculus']).toBe('learning');
+    expect(body.profile.topics['Calculus']).toBeUndefined();
+  });
 });
+
+

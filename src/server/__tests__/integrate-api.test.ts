@@ -297,4 +297,353 @@ describe('Multi-Cell Integrate & Synchronous Diff Resolution Gate API', () => {
     });
     expect(unlockedChatRes.status).toBe(200);
   });
+
+  it('creates a new card below blk_00 rather than expanding prerequisites when integrating a conceptual chat on blk_00', async () => {
+    const initialBlk00 =
+      '## 0. Prerequisites & Notation\n\n- **Lagrangian Mechanics**: Action principle.\n- **Vector Calculus**: Gradients and curl.';
+
+    await store.saveDocument(
+      'Hamiltonian Mechanics',
+      [
+        {
+          id: 'blk_00',
+          markdown: initialBlk00,
+        },
+        {
+          id: 'blk_01',
+          markdown: '## 1. Phase Space\n\nCoordinates $(q, p)$ define the state.',
+        },
+      ],
+      {
+        prerequisites: ['Lagrangian Mechanics', 'Vector Calculus'],
+      }
+    );
+
+    const app = createApp({
+      workspaceDir: tempDir,
+      cellChatGenerator: async () =>
+        'The action principle states that physical trajectories extremize the action integral.',
+      // Even if the generator attempts to expand blk_00 via updatedBlockMarkdown, integrate must create a new card below instead of expanding blk_00
+      integrateGenerator: async () => ({
+        updatedBlockMarkdown: `${initialBlk00}\n\n## Intuition for the Action Principle\n\nPhysical paths make the action $S = \\int L\\,dt$ stationary.`,
+        insertedBlocksMarkdown: [],
+        suggestedEdits: [],
+      }),
+      modelId: 'anthropic:claude-opus-4-6',
+    });
+
+    await app.request('/api/blocks/blk_00/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'Can you explain the action principle in more detail?',
+      }),
+    });
+
+    const intRes = await app.request('/api/blocks/blk_00/integrate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(intRes.status).toBe(200);
+    const intBody = await intRes.json();
+
+    // blk_00 remains unexpanded, and a new block is created immediately below blk_00
+    expect(intBody.blocks).toHaveLength(3);
+    expect(intBody.blocks[0]).toEqual({
+      id: 'blk_00',
+      markdown: initialBlk00,
+    });
+    expect(intBody.blocks[1].id).toBe('blk_03');
+    expect(intBody.blocks[1].markdown).toBe(
+      '## Intuition for the Action Principle\n\nPhysical paths make the action $S = \\int L\\,dt$ stationary.'
+    );
+    expect(intBody.blocks[2].id).toBe('blk_01');
+    expect(intBody.document.prerequisites).toEqual([
+      'Lagrangian Mechanics',
+      'Vector Calculus',
+    ]);
+  });
+
+  it('expands blk_00 and updates document.prerequisites only when integrating a chat that adds new prerequisites', async () => {
+    const initialBlk00 =
+      '## 0. Prerequisites & Notation\n\n- **Lagrangian Mechanics**: Action principle.\n- **Vector Calculus**: Gradients and curl.';
+
+    await store.saveDocument(
+      'Hamiltonian Mechanics',
+      [
+        {
+          id: 'blk_00',
+          markdown: initialBlk00,
+        },
+        {
+          id: 'blk_01',
+          markdown: '## 1. Phase Space\n\nCoordinates $(q, p)$ define the state.',
+        },
+      ],
+      {
+        prerequisites: ['Lagrangian Mechanics', 'Vector Calculus'],
+      }
+    );
+
+    const app = createApp({
+      workspaceDir: tempDir,
+      cellChatGenerator: async () =>
+        'Yes, Differential Forms are also a key prerequisite for symplectic geometry.',
+      integrateGenerator: async () => ({
+        updatedBlockMarkdown: `${initialBlk00}\n- **Differential Forms**: Exterior derivative and 2-forms.`,
+        insertedBlocksMarkdown: [],
+        addedPrerequisites: ['Differential Forms'],
+        suggestedEdits: [],
+      }),
+      modelId: 'anthropic:claude-opus-4-6',
+    });
+
+    await app.request('/api/blocks/blk_00/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'Add Differential Forms to the prerequisites.',
+      }),
+    });
+
+    const intRes = await app.request('/api/blocks/blk_00/integrate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(intRes.status).toBe(200);
+    const intBody = await intRes.json();
+
+    expect(intBody.blocks).toHaveLength(2);
+    expect(intBody.blocks[0]).toEqual({
+      id: 'blk_00',
+      markdown: `${initialBlk00}\n- **Differential Forms**: Exterior derivative and 2-forms.`,
+    });
+    expect(intBody.document.prerequisites).toEqual([
+      'Lagrangian Mechanics',
+      'Vector Calculus',
+      'Differential Forms',
+    ]);
+  });
+
+  it('integrating a chat on blk_00 explaining multiple prerequisites creates separate ConceptBlock cards below blk_00 without expanding blk_00', async () => {
+    const initialBlk00 =
+      '## 0. Prerequisites & Notation\n\n- **Linear Algebra**: Vectors and matrices.\n- **Multivariable Calculus**: Gradients.\n- **Probability**: Distributions.';
+
+    await store.saveDocument(
+      'Quantum Computing',
+      [
+        {
+          id: 'blk_00',
+          markdown: initialBlk00,
+        },
+        {
+          id: 'blk_01',
+          markdown: '## 1. Qubits\n\nSuperposition state $|\\psi\\rangle = \\alpha|0\\rangle + \\beta|1\\rangle$.',
+        },
+      ],
+      {
+        id: 'index',
+        filename: 'index.md',
+        prerequisites: ['Linear Algebra', 'Multivariable Calculus', 'Probability'],
+      }
+    );
+
+    // Case 1: Returned as 3 items in insertedBlocksMarkdown
+    let app = createApp({
+      workspaceDir: tempDir,
+      cellChatGenerator: async () => 'Explanations for all 3 prerequisites.',
+      integrateGenerator: async () => ({
+        updatedBlockMarkdown: null,
+        insertedBlocksMarkdown: [
+          '## 0a. Linear Algebra Foundations\n\nHilbert spaces and unitary matrices.',
+          '## 0b. Multivariable Calculus Foundations\n\nInner product gradient operators.',
+          '## 0c. Probability Foundations\n\nBorn rule and probability amplitudes.',
+        ],
+        suggestedEdits: [],
+      }),
+      modelId: 'anthropic:claude-opus-4-6',
+    });
+
+    await app.request('/api/blocks/blk_00/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'Explain all 3 prerequisites: Linear Algebra, Multivariable Calculus, and Probability.',
+        docId: 'index',
+      }),
+    });
+
+    let res = await app.request('/api/blocks/blk_00/integrate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ docId: 'index' }),
+    });
+    expect(res.status).toBe(200);
+    let body = await res.json();
+
+    // blk_00 should remain intact and unexpanded
+    expect(body.blocks[0]).toEqual({
+      id: 'blk_00',
+      markdown: initialBlk00,
+    });
+    // 3 separate ConceptBlock cards inserted below blk_00
+    expect(body.blocks).toHaveLength(5);
+    expect(body.blocks[1].markdown).toBe(
+      '## 0a. Linear Algebra Foundations\n\nHilbert spaces and unitary matrices.'
+    );
+    expect(body.blocks[2].markdown).toBe(
+      '## 0b. Multivariable Calculus Foundations\n\nInner product gradient operators.'
+    );
+    expect(body.blocks[3].markdown).toBe(
+      '## 0c. Probability Foundations\n\nBorn rule and probability amplitudes.'
+    );
+    expect(body.blocks[4].id).toBe('blk_01');
+
+    // Case 2: Returned as a single multi-section string inside updatedBlockMarkdown on blk_00
+    // Reset document back to 2 blocks
+    await store.saveDocument(
+      'Quantum Computing',
+      [
+        {
+          id: 'blk_00',
+          markdown: initialBlk00,
+        },
+        {
+          id: 'blk_01',
+          markdown: '## 1. Qubits\n\nSuperposition state $|\\psi\\rangle = \\alpha|0\\rangle + \\beta|1\\rangle$.',
+        },
+      ],
+      {
+        id: 'index',
+        filename: 'index.md',
+        prerequisites: ['Linear Algebra', 'Multivariable Calculus', 'Probability'],
+      }
+    );
+
+    app = createApp({
+      workspaceDir: tempDir,
+      cellChatGenerator: async () => 'Explanations for all 3 prerequisites.',
+      integrateGenerator: async () => ({
+        // LLM mistakenly put all 3 sections into updatedBlockMarkdown instead of insertedBlocksMarkdown
+        updatedBlockMarkdown: [
+          '## 0a. Linear Algebra Foundations\n\nHilbert spaces and unitary matrices.',
+          '',
+          '## 0b. Multivariable Calculus Foundations\n\nInner product gradient operators.',
+          '',
+          '## 0c. Probability Foundations\n\nBorn rule and probability amplitudes.',
+        ].join('\n'),
+        insertedBlocksMarkdown: [],
+        suggestedEdits: [],
+      }),
+      modelId: 'anthropic:claude-opus-4-6',
+    });
+
+    await app.request('/api/blocks/blk_00/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'Explain all 3 prerequisites in detail.',
+        docId: 'index',
+      }),
+    });
+
+    res = await app.request('/api/blocks/blk_00/integrate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ docId: 'index' }),
+    });
+    expect(res.status).toBe(200);
+    body = await res.json();
+
+    // blk_00 must not be expanded, and 3 separate ConceptBlock cards must be created below it
+    expect(body.blocks[0]).toEqual({
+      id: 'blk_00',
+      markdown: initialBlk00,
+    });
+    expect(body.blocks).toHaveLength(5);
+    expect(body.blocks[1].markdown).toBe(
+      '## 0a. Linear Algebra Foundations\n\nHilbert spaces and unitary matrices.'
+    );
+    expect(body.blocks[2].markdown).toBe(
+      '## 0b. Multivariable Calculus Foundations\n\nInner product gradient operators.'
+    );
+    expect(body.blocks[3].markdown).toBe(
+      '## 0c. Probability Foundations\n\nBorn rule and probability amplitudes.'
+    );
+    expect(body.blocks[4].id).toBe('blk_01');
+
+    // Case 3: Returned as a single string with ### headers inside insertedBlocksMarkdown
+    await store.saveDocument(
+      'Quantum Computing',
+      [
+        {
+          id: 'blk_00',
+          markdown: initialBlk00,
+        },
+        {
+          id: 'blk_01',
+          markdown: '## 1. Qubits\n\nSuperposition state $|\\psi\\rangle = \\alpha|0\\rangle + \\beta|1\\rangle$.',
+        },
+      ],
+      {
+        id: 'index',
+        filename: 'index.md',
+        prerequisites: ['Linear Algebra', 'Multivariable Calculus', 'Probability'],
+      }
+    );
+
+    app = createApp({
+      workspaceDir: tempDir,
+      cellChatGenerator: async () => 'Explanations for all 3 prerequisites.',
+      integrateGenerator: async () => ({
+        updatedBlockMarkdown: null,
+        insertedBlocksMarkdown: [
+          [
+            '### 0a. Linear Algebra Foundations\n\nHilbert spaces and unitary matrices.',
+            '',
+            '### 0b. Multivariable Calculus Foundations\n\nInner product gradient operators.',
+            '',
+            '### 0c. Probability Foundations\n\nBorn rule and probability amplitudes.',
+          ].join('\n'),
+        ],
+        suggestedEdits: [],
+      }),
+      modelId: 'anthropic:claude-opus-4-6',
+    });
+
+    await app.request('/api/blocks/blk_00/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'Explain all 3 prerequisites in detail.',
+        docId: 'index',
+      }),
+    });
+
+    res = await app.request('/api/blocks/blk_00/integrate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ docId: 'index' }),
+    });
+    expect(res.status).toBe(200);
+    body = await res.json();
+
+    expect(body.blocks[0]).toEqual({
+      id: 'blk_00',
+      markdown: initialBlk00,
+    });
+    expect(body.blocks).toHaveLength(5);
+    expect(body.blocks[1].markdown).toBe(
+      '## 0a. Linear Algebra Foundations\n\nHilbert spaces and unitary matrices.'
+    );
+    expect(body.blocks[2].markdown).toBe(
+      '## 0b. Multivariable Calculus Foundations\n\nInner product gradient operators.'
+    );
+    expect(body.blocks[3].markdown).toBe(
+      '## 0c. Probability Foundations\n\nBorn rule and probability amplitudes.'
+    );
+  });
 });
+

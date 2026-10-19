@@ -173,6 +173,13 @@ export function extractToc(blocks: ConceptBlock[]): TocItem[] {
   return toc;
 }
 
+export function isPrerequisiteBlock(block: ConceptBlock): boolean {
+  return (
+    block.id === 'blk_00' ||
+    /^#{1,3}\s*(?:0\b|prerequisites\b)/im.test(block.markdown)
+  );
+}
+
 export function extractPrerequisitesFromBlock0(markdown: string): string[] {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
   const topics: string[] = [];
@@ -215,3 +222,192 @@ export function extractPrerequisitesFromBlock0(markdown: string): string[] {
 
   return topics;
 }
+
+export function splitMultiSectionMarkdown(markdown: string): string[] {
+  const normalized = markdown.replace(/\r\n/g, '\n').trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const lines = normalized.split('\n');
+  let activeFence: string | null = null;
+  const taggedLines: { text: string; outsideFence: boolean }[] = [];
+
+  for (const line of lines) {
+    const fenceMatch = line.match(FENCE_RE);
+    if (fenceMatch) {
+      const fence = fenceMatch[1];
+      if (activeFence === null) {
+        activeFence = fence;
+        taggedLines.push({ text: line, outsideFence: false });
+        continue;
+      } else if (
+        line.trimEnd().startsWith(activeFence[0].repeat(activeFence.length)) &&
+        line.trim() === fence
+      ) {
+        activeFence = null;
+        taggedLines.push({ text: line, outsideFence: false });
+        continue;
+      }
+    }
+    taggedLines.push({ text: line, outsideFence: activeFence === null });
+  }
+
+  // 1. Check for 2 or more top-level `## ` headings outside fenced code blocks
+  const h2Indices: number[] = [];
+  for (let i = 0; i < taggedLines.length; i++) {
+    if (taggedLines[i].outsideFence && /^##\s+/.test(taggedLines[i].text)) {
+      h2Indices.push(i);
+    }
+  }
+
+  if (h2Indices.length >= 2) {
+    const sections: string[] = [];
+    const leading = taggedLines
+      .slice(0, h2Indices[0])
+      .map((l) => l.text)
+      .join('\n')
+      .trim();
+
+    for (let i = 0; i < h2Indices.length; i++) {
+      const start = h2Indices[i];
+      const end =
+        i < h2Indices.length - 1 ? h2Indices[i + 1] : taggedLines.length;
+      const sectionText = taggedLines
+        .slice(start, end)
+        .map((l) => l.text)
+        .join('\n')
+        .trim();
+      if (sectionText) {
+        sections.push(sectionText);
+      }
+    }
+
+    if (leading) {
+      if (/^#\s+[^\n]+$/.test(leading)) {
+        if (sections.length > 0) {
+          sections[0] = `${leading}\n\n${sections[0]}`;
+        } else {
+          sections.push(leading);
+        }
+      } else {
+        sections.unshift(leading);
+      }
+    }
+
+    return sections;
+  }
+
+  // 2. Check for 2 or more `### ` headings outside fenced code blocks
+  const h3Indices: number[] = [];
+  for (let i = 0; i < taggedLines.length; i++) {
+    if (taggedLines[i].outsideFence && /^###\s+/.test(taggedLines[i].text)) {
+      h3Indices.push(i);
+    }
+  }
+
+  if (h3Indices.length >= 2) {
+    const sections: string[] = [];
+    const leading = taggedLines
+      .slice(0, h3Indices[0])
+      .map((l) => l.text)
+      .join('\n')
+      .trim();
+
+    for (let i = 0; i < h3Indices.length; i++) {
+      const start = h3Indices[i];
+      const end =
+        i < h3Indices.length - 1 ? h3Indices[i + 1] : taggedLines.length;
+      const sectionLines = taggedLines.slice(start, end).map((l) => l.text);
+      if (sectionLines.length > 0) {
+        // Promote `### ` to `## `
+        sectionLines[0] = sectionLines[0].replace(/^###\s+/, '## ');
+        const sectionText = sectionLines.join('\n').trim();
+        if (sectionText) {
+          sections.push(sectionText);
+        }
+      }
+    }
+
+    if (leading) {
+      if (/^#{1,2}\s+[^\n]+$/.test(leading)) {
+        if (sections.length > 0) {
+          sections[0] = `${leading}\n\n${sections[0]}`;
+        } else {
+          sections.push(leading);
+        }
+      } else {
+        sections.unshift(leading);
+      }
+    }
+
+    return sections;
+  }
+
+  // 3. Check for 2 or more numbered bold topic headers (only when no ## or ### headings exist)
+  if (h2Indices.length === 0 && h3Indices.length === 0) {
+    const boldIndices: number[] = [];
+    for (let i = 0; i < taggedLines.length; i++) {
+      if (
+        taggedLines[i].outsideFence &&
+        /^(?:\d+\.\s+\*\*[^*]+\*\*|\*\*[^*]+\*\*\s*[:—–-])/.test(
+          taggedLines[i].text.trim()
+        )
+      ) {
+        boldIndices.push(i);
+      }
+    }
+
+    if (boldIndices.length >= 2) {
+      const sections: string[] = [];
+      const leading = taggedLines
+        .slice(0, boldIndices[0])
+        .map((l) => l.text)
+        .join('\n')
+        .trim();
+
+      for (let i = 0; i < boldIndices.length; i++) {
+        const start = boldIndices[i];
+        const end =
+          i < boldIndices.length - 1 ? boldIndices[i + 1] : taggedLines.length;
+        const sectionLines = taggedLines.slice(start, end).map((l) => l.text);
+        if (sectionLines.length > 0) {
+          const firstLine = sectionLines[0].trim();
+          const match = firstLine.match(
+            /^(?:(\d+\.)\s+)?\*\*([^*]+)\*\*(?:\s*[:—–-]\s*(.*))?$/
+          );
+          if (match) {
+            const numPrefix = match[1] ? `${match[1]} ` : '';
+            const topicTitle = match[2].trim();
+            const remainder = match[3]?.trim();
+            const promotedHeading = `## ${numPrefix}${topicTitle}`;
+            sectionLines[0] = remainder
+              ? `${promotedHeading}\n\n${remainder}`
+              : promotedHeading;
+          }
+          const sectionText = sectionLines.join('\n').trim();
+          if (sectionText) {
+            sections.push(sectionText);
+          }
+        }
+      }
+
+      if (leading) {
+        if (/^#{1,2}\s+[^\n]+$/.test(leading)) {
+          if (sections.length > 0) {
+            sections[0] = `${leading}\n\n${sections[0]}`;
+          } else {
+            sections.push(leading);
+          }
+        } else {
+          sections.unshift(leading);
+        }
+      }
+
+      return sections;
+    }
+  }
+
+  return [normalized];
+}
+
