@@ -67,9 +67,7 @@ describe('WorkspaceStore', () => {
       ].join('\n')
     );
 
-    const rawSidecar = JSON.parse(
-      await fs.readFile(path.join(tempDir, '.folio', 'notebook.json'), 'utf-8')
-    );
+    const rawSidecar = await store.loadState();
     expect(rawSidecar.documents.index).toEqual({
       id: 'index',
       title: 'Hamiltonian Mechanics',

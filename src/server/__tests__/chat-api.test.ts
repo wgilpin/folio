@@ -128,10 +128,8 @@ describe('Ephemeral Cell Chat API', () => {
 
     expect(body2.activeChat.messages).toHaveLength(4);
 
-    // Verify .folio/notebook.json persisted activeChat
-    const sidecarRaw = JSON.parse(
-      await fs.readFile(path.join(tempDir, '.folio', 'notebook.json'), 'utf-8')
-    );
+    // Verify store persisted activeChat
+    const sidecarRaw = await store.loadState();
     expect(sidecarRaw.activeChat).toEqual(body2.activeChat);
 
     // Verify GET /api/doc includes activeChat and pendingEdits
@@ -172,10 +170,8 @@ describe('Ephemeral Cell Chat API', () => {
     const delBody = await delRes.json();
     expect(delBody.activeChat).toBeNull();
 
-    // Verify .folio/notebook.json has activeChat === null
-    const sidecarRaw = JSON.parse(
-      await fs.readFile(path.join(tempDir, '.folio', 'notebook.json'), 'utf-8')
-    );
+    // Verify store has activeChat === null
+    const sidecarRaw = await store.loadState();
     expect(sidecarRaw.activeChat).toBeNull();
 
     // Verify index.md on disk remains completely unchanged

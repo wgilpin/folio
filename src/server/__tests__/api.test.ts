@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../app.js';
+import { WorkspaceStore } from '../store.js';
 
 describe('Document API routes', () => {
   let tempDir: string;
@@ -124,11 +125,7 @@ describe('Document API routes', () => {
       'hamiltonian-mechanics',
     ]);
 
-    const sidecarRaw = await fs.readFile(
-      path.join(tempDir, '.folio', 'notebook.json'),
-      'utf-8'
-    );
-    const sidecar = JSON.parse(sidecarRaw);
+    const sidecar = await new WorkspaceStore(tempDir).loadState();
     expect(sidecar.documents['hamiltonian-mechanics'].title).toBe(
       'Hamiltonian Mechanics'
     );

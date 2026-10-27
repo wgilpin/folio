@@ -105,6 +105,7 @@ describe('Document-Level Notebook Chat API', () => {
   it('POST /api/doc/integrate appends new concept blocks to document and clears chat', async () => {
     const mockDocChatGenerator: DocumentChatGenerator = async () => 'Synthesized view';
     const mockDocIntegrateGenerator: DocumentIntegrateGenerator = async () => ({
+      updatedBlocks: [],
       insertedBlocksMarkdown: [
         '## 3. Media Literacy Initiatives\n\nPublic campaigns to build critical consumption skills.',
       ],

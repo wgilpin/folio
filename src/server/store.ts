@@ -26,6 +26,12 @@ import {
   serializeMarkdownBlocks,
   splitMultiSectionMarkdown,
 } from './markdown.js';
+import {
+  ensureSqliteMigratedAndLoadState,
+  persistStateToSqlite,
+  syncDocumentBlocksToSqlite,
+} from './db.js';
+import { isReservedReadmeSlug, writeWorkspaceReadme } from './readme.js';
 
 
 export interface LoadedDocument {
@@ -111,14 +117,6 @@ function splitMarkdownContent(markdown: string, offset?: number): [string, strin
 export class WorkspaceStore {
   constructor(public readonly workspaceDir: string) {}
 
-  private get sidecarDir(): string {
-    return path.join(this.workspaceDir, '.folio');
-  }
-
-  private get sidecarPath(): string {
-    return path.join(this.sidecarDir, 'notebook.json');
-  }
-
   private resolveStateSettings(
     state: NotebookState,
     defaultModelId?: string
@@ -130,21 +128,24 @@ export class WorkspaceStore {
   }
 
   async loadState(): Promise<NotebookState> {
-    try {
-      const raw = await fs.readFile(this.sidecarPath, 'utf-8');
-      return NotebookStateSchema.parse(JSON.parse(raw));
-    } catch {
-      return { documents: {}, pendingEdits: [], activeChat: null };
-    }
+    return ensureSqliteMigratedAndLoadState(this.workspaceDir);
   }
 
-  async saveState(state: NotebookState): Promise<void> {
-    await fs.mkdir(this.sidecarDir, { recursive: true });
-    await fs.writeFile(
-      this.sidecarPath,
-      JSON.stringify(state, null, 2) + '\n',
-      'utf-8'
-    );
+  async saveState(
+    state: NotebookState,
+    blocksByDocId?: Record<string, ConceptBlock[]>
+  ): Promise<void> {
+    await persistStateToSqlite(this.workspaceDir, state, blocksByDocId);
+    if (
+      Object.keys(state.documents).length > 0 ||
+      blocksByDocId !== undefined
+    ) {
+      await writeWorkspaceReadme(
+        this.workspaceDir,
+        state.documents,
+        blocksByDocId
+      );
+    }
   }
 
   async getSettings(defaultModelId?: string): Promise<NotebookSettings> {
@@ -171,8 +172,11 @@ export class WorkspaceStore {
 
   async resolveDocId(requestedDocId?: string): Promise<string> {
     const state = await this.loadState();
-    if (requestedDocId && requestedDocId !== 'index') {
-      const cleanRequested = requestedDocId.replace(/\.md$/i, '').trim();
+    const effectiveRequested = isReservedReadmeSlug(requestedDocId)
+      ? undefined
+      : requestedDocId;
+    if (effectiveRequested && effectiveRequested !== 'index') {
+      const cleanRequested = effectiveRequested.replace(/\.md$/i, '').trim();
       // 1. Direct ID match
       if (state.documents[cleanRequested]) {
         return cleanRequested;
@@ -180,7 +184,7 @@ export class WorkspaceStore {
       // 2. Match by exact or cleaned filename
       const byFilename = Object.values(state.documents).find(
         (d) =>
-          d.filename === requestedDocId ||
+          d.filename === effectiveRequested ||
           d.filename === `${cleanRequested}.md` ||
           d.filename.replace(/\.md$/i, '') === cleanRequested
       );
@@ -211,7 +215,7 @@ export class WorkspaceStore {
       }
       return cleanRequested;
     }
-    if (requestedDocId === 'index') {
+    if (effectiveRequested === 'index') {
       if (state.documents['index']) {
         return 'index';
       }
@@ -348,7 +352,9 @@ export class WorkspaceStore {
 
     if (state.activeDocId !== docId && state.documents[docId]) {
       state.activeDocId = docId;
-      await this.saveState(state);
+      await this.saveState(state, { [docId]: blocks });
+    } else if (state.documents[docId]) {
+      await syncDocumentBlocksToSqlite(this.workspaceDir, docId, blocks);
     }
 
     return {
@@ -423,7 +429,7 @@ export class WorkspaceStore {
       serialized,
       'utf-8'
     );
-    await this.saveState(state);
+    await this.saveState(state, { [docId]: blocks });
 
     const toc = extractToc(blocks);
     const activeChat =
@@ -763,7 +769,7 @@ export class WorkspaceStore {
       serializeMarkdownBlocks(finalBlocks),
       'utf-8'
     );
-    await this.saveState(state);
+    await this.saveState(state, { [docId]: finalBlocks });
 
     return {
       document: loaded.document,
@@ -993,7 +999,13 @@ export class WorkspaceStore {
       serializeMarkdownBlocks(updatedParentBlocks),
       'utf-8'
     );
-    await this.saveState(state);
+    const branchedBlocksMap: Record<string, ConceptBlock[]> = {
+      [docId]: updatedParentBlocks,
+    };
+    for (const c of createdDocs) {
+      branchedBlocksMap[c.docNode.id] = c.blocks;
+    }
+    await this.saveState(state, branchedBlocksMap);
 
     return {
       document: createdDocs[0].docNode,
@@ -1081,7 +1093,7 @@ export class WorkspaceStore {
 
     state.activeChat = null;
     state.pendingEdits = stagedEdits;
-    await this.saveState(state);
+    await this.saveState(state, { [docId]: updatedBlocks });
 
     const toc = extractToc(updatedBlocks);
     return {
@@ -1197,7 +1209,11 @@ export class WorkspaceStore {
     state.documents[docId] = parentDocNode;
     state.activeChat = null;
     state.activeDocId = createdDocs[0]!.docNode.id;
-    await this.saveState(state);
+    const docBranchedBlocksMap: Record<string, ConceptBlock[]> = {};
+    for (const c of createdDocs) {
+      docBranchedBlocksMap[c.docNode.id] = c.blocks;
+    }
+    await this.saveState(state, docBranchedBlocksMap);
 
     const primaryChild = createdDocs[0]!;
     return {
@@ -1375,7 +1391,7 @@ export class WorkspaceStore {
       serializeMarkdownBlocks(updatedBlocks),
       'utf-8'
     );
-    await this.saveState(state);
+    await this.saveState(state, { [edit.docId]: updatedBlocks });
 
     const activeChat =
       state.activeChat && state.activeChat.docId === edit.docId
@@ -1647,7 +1663,7 @@ export class WorkspaceStore {
       }
     }
 
-    await this.saveState(state);
+    await this.saveState(state, {});
 
     if (state.activeDocId && state.documents[state.activeDocId]) {
       return this.loadDocument(state.activeDocId);
