@@ -700,6 +700,7 @@ export class WorkspaceStore {
       updatedTargetBlock = {
         id: targetBlock.id,
         markdown: integrateResult.updatedBlockMarkdown.trim(),
+        ...(targetBlock.done ? { done: true } : {}),
       };
     }
 
@@ -1006,6 +1007,7 @@ export class WorkspaceStore {
     updatedParentBlocks[blockIndex] = {
       id: parentTargetBlock.id,
       markdown: updatedTargetMarkdown,
+      ...(parentTargetBlock.done ? { done: true } : {}),
     };
 
     state.documents[docId] = parentDocNode;
@@ -1636,6 +1638,7 @@ export class WorkspaceStore {
     updatedBlocks[blockIndex] = {
       id: edit.blockId,
       markdown: edit.proposedMarkdown.trim(),
+      ...(loaded.blocks[blockIndex].done ? { done: true } : {}),
     };
 
     state.pendingEdits.splice(editIndex, 1);
@@ -1698,6 +1701,7 @@ export class WorkspaceStore {
     updatedBlocks[index] = {
       id: blockId,
       markdown: markdown.trim(),
+      ...(loaded.blocks[index].done ? { done: true } : {}),
     };
 
     return this.saveDocument(loaded.document.title, updatedBlocks, {
@@ -1706,6 +1710,47 @@ export class WorkspaceStore {
       filename: loaded.document.filename,
       parentId: loaded.document.parentId,
       parentBlockId: loaded.document.parentBlockId,
+    });
+  }
+
+  async setBlockDone(
+    blockId: string,
+    done: boolean,
+    docId = 'index'
+  ): Promise<LoadedDocument> {
+    const loaded = await this.loadDocument(docId);
+    if (!loaded.document) {
+      throw new Error(`Document not found: ${docId}`);
+    }
+
+    const index = loaded.blocks.findIndex((b) => b.id === blockId);
+    if (index === -1) {
+      throw new Error(`Block not found: ${blockId}`);
+    }
+
+    const updatedBlocks = [...loaded.blocks];
+    const current = updatedBlocks[index];
+    if (done) {
+      updatedBlocks[index] = {
+        id: current.id,
+        markdown: current.markdown,
+        done: true,
+      };
+    } else {
+      updatedBlocks[index] = {
+        id: current.id,
+        markdown: current.markdown,
+      };
+    }
+
+    return this.saveDocument(loaded.document.title, updatedBlocks, {
+      id: loaded.document.id,
+      shortTitle: loaded.document.shortTitle,
+      filename: loaded.document.filename,
+      parentId: loaded.document.parentId,
+      parentBlockId: loaded.document.parentBlockId,
+      prerequisites: loaded.document.prerequisites,
+      prerequisiteDocIds: loaded.document.prerequisiteDocIds,
     });
   }
 

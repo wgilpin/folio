@@ -1,6 +1,7 @@
 import type { ConceptBlock, TocItem } from '../shared/schema.js';
 
-const BLOCK_MARKER_RE = /^<!--\s*folio:block\s+id="([^"]+)"\s*-->\s*$/;
+const BLOCK_MARKER_RE =
+  /^<!--\s*folio:block\s+id="([^"]+)"(?:\s+done="(true|false)")?\s*-->\s*$/;
 const FENCE_RE = /^(`{3,}|~{3,})/;
 
 export function generateBlockId(index?: number): string {
@@ -22,6 +23,7 @@ export function parseMarkdownBlocks(markdown: string): ConceptBlock[] {
   if (hasMarkers) {
     const blocks: ConceptBlock[] = [];
     let currentId: string | null = null;
+    let currentDone = false;
     let currentLines: string[] = [];
     let leadingLines: string[] = [];
     const usedIds = new Set<string>();
@@ -54,9 +56,11 @@ export function parseMarkdownBlocks(markdown: string): ConceptBlock[] {
           blocks.push({
             id: currentId,
             markdown: currentLines.join('\n').trim(),
+            ...(currentDone ? { done: true } : {}),
           });
         }
         currentId = nextUniqueId(match[1]);
+        currentDone = match[2] === 'true';
         currentLines = [];
       } else if (currentId !== null) {
         currentLines.push(line);
@@ -69,6 +73,7 @@ export function parseMarkdownBlocks(markdown: string): ConceptBlock[] {
       blocks.push({
         id: currentId,
         markdown: currentLines.join('\n').trim(),
+        ...(currentDone ? { done: true } : {}),
       });
     }
 
@@ -123,7 +128,7 @@ export function serializeMarkdownBlocks(blocks: ConceptBlock[]): string {
     blocks
       .map(
         (block) =>
-          `<!-- folio:block id="${block.id}" -->\n${block.markdown.trim()}`
+          `<!-- folio:block id="${block.id}"${block.done ? ' done="true"' : ''} -->\n${block.markdown.trim()}`
       )
       .join('\n\n') + '\n'
   );

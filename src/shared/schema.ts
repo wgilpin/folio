@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const ConceptBlockSchema = z.object({
   id: z.string(),
   markdown: z.string(),
+  done: z.boolean().optional(),
 });
 
 export type ConceptBlock = z.infer<typeof ConceptBlockSchema>;
@@ -19,8 +20,23 @@ export const TopicFamiliaritySchema = z.enum(['unseen', 'learning', 'known']);
 
 export type TopicFamiliarity = z.infer<typeof TopicFamiliaritySchema>;
 
+export const EngagedSourceRecordSchema = z.object({
+  docId: z.string(),
+  docTitle: z.string(),
+  workspaceDir: z.string().optional(),
+  completedBlockIds: z.array(z.string()).default([]),
+  completedSectionHeadings: z.array(z.string()).default([]),
+  totalBlocks: z.number().int().nonnegative().default(0),
+  updatedAt: z.string().optional(),
+});
+
+export type EngagedSourceRecord = z.infer<typeof EngagedSourceRecordSchema>;
+
 export const LearnerProfileSchema = z.object({
   topics: z.record(z.string(), TopicFamiliaritySchema).default({}),
+  background: z.string().optional(),
+  learningInstructions: z.string().optional(),
+  engagedSources: z.array(EngagedSourceRecordSchema).optional(),
   workspaceDir: z.string().optional(),
   workspaces: z.array(z.string()).optional(),
 });

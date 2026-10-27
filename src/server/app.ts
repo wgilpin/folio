@@ -23,6 +23,7 @@ import {
   defaultIntegrateGenerator,
   defaultSeedGenerator,
   getActiveModelId,
+  hasLearnerProfileContent,
   resolvePedagogicalPrompt,
   type BranchGenerator,
   type CellChatGenerator,
@@ -97,6 +98,17 @@ const UpdateProfileTopicRequestSchema = z.object({
   status: TopicFamiliaritySchema,
 });
 
+const UpdateProfileRequestSchema = z.object({
+  background: z.string().optional(),
+  learningInstructions: z.string().optional(),
+  topics: z.record(z.string(), TopicFamiliaritySchema).optional(),
+});
+
+const SetBlockDoneRequestSchema = z.object({
+  done: z.boolean(),
+  docId: z.string().optional(),
+});
+
 const SeedPrerequisiteRequestSchema = z.object({
   topic: z.string().trim().min(1, 'Prerequisite topic is required'),
   parentDocId: z.string().optional(),
@@ -162,7 +174,7 @@ export function createApp(options: CreateAppOptions): Hono {
         settings,
         workspaceDir: store.workspaceDir,
         workspaces: Array.from(knownWorkspaces),
-        ...(options.profilePath || Object.keys(profile.topics).length > 0
+        ...(options.profilePath || hasLearnerProfileContent(profile)
           ? { profile }
           : {}),
         modelId: settings.modelId,
@@ -203,6 +215,23 @@ export function createApp(options: CreateAppOptions): Hono {
 
   app.get('/api/profile', async (c) => {
     const profile = await profileStore.loadProfile();
+    return c.json({ profile });
+  });
+
+  app.put('/api/profile', async (c) => {
+    let rawBody: unknown;
+    try {
+      rawBody = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON request body' }, 400);
+    }
+
+    const parsedReq = UpdateProfileRequestSchema.safeParse(rawBody);
+    if (!parsedReq.success) {
+      return c.json({ error: 'Invalid profile payload' }, 400);
+    }
+
+    const profile = await profileStore.updateAbilityRecord(parsedReq.data);
     return c.json({ profile });
   });
 
@@ -280,7 +309,7 @@ export function createApp(options: CreateAppOptions): Hono {
           modelId: settings.modelId,
           reasoningEffort: settings.reasoningEffort,
           pedagogicalPrompt: resolvePedagogicalPrompt(settings),
-          ...(Object.keys(currentProfile.topics).length > 0
+          ...(hasLearnerProfileContent(currentProfile)
             ? { learnerProfile: currentProfile }
             : {}),
           ...(relatedLibraryDocs.length > 0 ? { relatedLibraryDocs } : {}),
@@ -445,7 +474,7 @@ export function createApp(options: CreateAppOptions): Hono {
           modelId: settings.modelId,
           reasoningEffort: settings.reasoningEffort,
           pedagogicalPrompt: resolvePedagogicalPrompt(settings),
-          ...(Object.keys(profile.topics).length > 0
+          ...(hasLearnerProfileContent(profile)
             ? { learnerProfile: profile }
             : {}),
           ...(relatedLibraryDocs.length > 0 ? { relatedLibraryDocs } : {}),
@@ -507,6 +536,7 @@ export function createApp(options: CreateAppOptions): Hono {
         { role: 'user', content: parsedReq.data.message },
       ];
       const settings = await store.getSettings(getDefaultModelId());
+      const profile = await profileStore.loadProfile();
 
       const assistantReply = await documentChatGenerator({
         context,
@@ -514,6 +544,9 @@ export function createApp(options: CreateAppOptions): Hono {
         modelId: settings.modelId,
         reasoningEffort: settings.reasoningEffort,
         pedagogicalPrompt: resolvePedagogicalPrompt(settings),
+        ...(hasLearnerProfileContent(profile)
+          ? { learnerProfile: profile }
+          : {}),
       });
 
       const activeChat = await store.appendChatMessage(
@@ -578,6 +611,7 @@ export function createApp(options: CreateAppOptions): Hono {
     try {
       const context = await buildDocumentContext(store, docId);
       const settings = await store.getSettings(getDefaultModelId());
+      const profile = await profileStore.loadProfile();
 
       const integrateResult = DocumentIntegrateResultSchema.parse(
         await documentIntegrateGenerator({
@@ -586,12 +620,14 @@ export function createApp(options: CreateAppOptions): Hono {
           modelId: settings.modelId,
           reasoningEffort: settings.reasoningEffort,
           pedagogicalPrompt: resolvePedagogicalPrompt(settings),
+          ...(hasLearnerProfileContent(profile)
+            ? { learnerProfile: profile }
+            : {}),
         })
       );
 
       const saved = await store.integrateDocumentChat(docId, integrateResult);
 
-      const profile = await profileStore.loadProfile();
       return c.json({
         document: saved.document,
         blocks: saved.blocks,
@@ -666,7 +702,7 @@ export function createApp(options: CreateAppOptions): Hono {
           modelId: settings.modelId,
           reasoningEffort: settings.reasoningEffort,
           pedagogicalPrompt: resolvePedagogicalPrompt(settings),
-          ...(Object.keys(profile.topics).length > 0
+          ...(hasLearnerProfileContent(profile)
             ? { learnerProfile: profile }
             : {}),
           ...(relatedLibraryDocs.length > 0 ? { relatedLibraryDocs } : {}),
@@ -724,6 +760,62 @@ export function createApp(options: CreateAppOptions): Hono {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Failed to delete document';
+      const status = message.includes('not found') ? 404 : 400;
+      return c.json({ error: message }, status);
+    }
+  });
+
+  app.put('/api/blocks/:id/done', async (c) => {
+    await ensureWorkspaceInitialized();
+    const blockId = c.req.param('id');
+    let rawBody: unknown;
+    try {
+      rawBody = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON request body' }, 400);
+    }
+
+    const parsedReq = SetBlockDoneRequestSchema.safeParse(rawBody);
+    if (!parsedReq.success) {
+      return c.json({ error: 'Block done boolean is required' }, 400);
+    }
+
+    try {
+      const docId = await store.resolveDocId(parsedReq.data.docId);
+      const saved = await store.setBlockDone(
+        blockId,
+        parsedReq.data.done,
+        docId
+      );
+      const settings = await store.getSettings(getDefaultModelId());
+      const profile = saved.document
+        ? await profileStore.recordDocumentEngagement({
+            docId: saved.document.id,
+            docTitle: saved.document.title,
+            shortTitle: saved.document.shortTitle,
+            workspaceDir: store.workspaceDir,
+            blocks: saved.blocks,
+          })
+        : await profileStore.loadProfile();
+
+      return c.json({
+        document: saved.document,
+        blocks: saved.blocks,
+        toc: saved.toc,
+        documents: saved.documents,
+        activeChat: saved.activeChat,
+        pendingEdits: saved.pendingEdits,
+        settings,
+        workspaceDir: store.workspaceDir,
+        workspaces: Array.from(knownWorkspaces),
+        profile,
+        modelId: settings.modelId,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to update block done state';
       const status = message.includes('not found') ? 404 : 400;
       return c.json({ error: message }, status);
     }
@@ -933,6 +1025,7 @@ export function createApp(options: CreateAppOptions): Hono {
         { role: 'user', content: parsedReq.data.message },
       ];
       const settings = await store.getSettings(getDefaultModelId());
+      const profile = await profileStore.loadProfile();
 
       const assistantReply = await cellChatGenerator({
         context,
@@ -940,6 +1033,9 @@ export function createApp(options: CreateAppOptions): Hono {
         modelId: settings.modelId,
         reasoningEffort: settings.reasoningEffort,
         pedagogicalPrompt: resolvePedagogicalPrompt(settings),
+        ...(hasLearnerProfileContent(profile)
+          ? { learnerProfile: profile }
+          : {}),
       });
 
       const activeChat = await store.appendChatMessage(
@@ -1016,6 +1112,9 @@ export function createApp(options: CreateAppOptions): Hono {
           modelId: settings.modelId,
           reasoningEffort: settings.reasoningEffort,
           pedagogicalPrompt: resolvePedagogicalPrompt(settings),
+          ...(hasLearnerProfileContent(profile)
+            ? { learnerProfile: profile }
+            : {}),
         })
       );
 
@@ -1103,7 +1202,7 @@ export function createApp(options: CreateAppOptions): Hono {
           modelId: settings.modelId,
           reasoningEffort: settings.reasoningEffort,
           pedagogicalPrompt: resolvePedagogicalPrompt(settings),
-          ...(Object.keys(profile.topics).length > 0
+          ...(hasLearnerProfileContent(profile)
             ? { learnerProfile: profile }
             : {}),
           ...(relatedLibraryDocs.length > 0 ? { relatedLibraryDocs } : {}),
