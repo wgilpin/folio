@@ -5,6 +5,7 @@ import {
   type NotebookSettings,
   type PedagogicalProfileId,
   type ReasoningEffort,
+  type SearchResultItem,
   type TocItem,
 } from '../../shared/schema.js';
 
@@ -20,6 +21,7 @@ export interface SidebarTreeProps {
   onToggleCollapse: () => void;
   onOpenSeedModal: () => void;
   onSelectDocument?: (docId: string) => void;
+  onSelectSearchResult?: (docId: string, blockId: string) => Promise<void> | void;
   onDeleteDocument?: (docId: string) => Promise<void> | void;
   onUpdateSettings?: (patch: Partial<NotebookSettings>) => Promise<void> | void;
   onSwitchWorkspace?: (workspaceDir: string) => Promise<void> | void;
@@ -43,6 +45,7 @@ export function SidebarTree({
   onToggleCollapse,
   onOpenSeedModal,
   onSelectDocument,
+  onSelectSearchResult,
   onDeleteDocument,
   onUpdateSettings,
   onSwitchWorkspace,
@@ -60,6 +63,37 @@ export function SidebarTree({
   const [collapsedDocIds, setCollapsedDocIds] = useState<Record<string, boolean>>(
     {}
   );
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
+
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      setSearchResults([]);
+      return;
+    }
+
+    let cancelled = false;
+    async function runSearch() {
+      try {
+        const res = await fetch(
+          `/api/search?q=${encodeURIComponent(trimmed)}&mode=hybrid`
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as { results?: SearchResultItem[] };
+        if (!cancelled) {
+          setSearchResults(data.results ?? []);
+        }
+      } catch {
+        // Ignore network errors during live search typing
+      }
+    }
+
+    void runSearch();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchQuery]);
 
   useEffect(() => {
     setWorkspaceInput(workspaceDir);
@@ -369,6 +403,101 @@ export function SidebarTree({
               </div>
             )}
           </div>
+        </section>
+
+        <section style={{ marginBottom: '20px' }}>
+          <div
+            style={{
+              fontSize: '12px',
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              color: '#65635E',
+              marginBottom: '8px',
+            }}
+          >
+            Search Library
+          </div>
+          <input
+            type="search"
+            aria-label="Search library"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search concepts, formulas..."
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              fontFamily: "'Inter', system-ui, sans-serif",
+              fontSize: '13px',
+              color: '#18181B',
+              backgroundColor: '#FFFFFF',
+              border: '1px solid #E4DFD7',
+              borderRadius: '6px',
+              padding: '6px 8px',
+            }}
+          />
+          {searchQuery.trim().length > 0 && (
+            <div
+              role="region"
+              aria-label="Library search results"
+              style={{
+                marginTop: '8px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+              }}
+            >
+              {searchResults.length > 0 ? (
+                searchResults.map((item) => (
+                  <button
+                    key={`${item.docId}-${item.blockId}`}
+                    type="button"
+                    onClick={() => {
+                      if (onSelectSearchResult) {
+                        void onSelectSearchResult(item.docId, item.blockId);
+                      } else {
+                        onSelectDocument?.(item.docId);
+                      }
+                    }}
+                    style={{
+                      textAlign: 'left',
+                      backgroundColor: '#FFFFFF',
+                      border: '1px solid #E4DFD7',
+                      borderRadius: '6px',
+                      padding: '8px 10px',
+                      cursor: 'pointer',
+                      fontFamily: "'Inter', system-ui, sans-serif",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: '#18181B',
+                        marginBottom: '2px',
+                      }}
+                    >
+                      {getConciseTitle(item.docTitle)}
+                      {item.heading ? ` — ${item.heading}` : ''}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        color: '#65635E',
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {item.snippet}
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div style={{ fontSize: '12px', color: '#65635E' }}>
+                  No matching blocks
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         <section style={{ marginBottom: '24px' }}>

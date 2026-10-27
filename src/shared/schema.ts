@@ -199,3 +199,27 @@ export const IntegrateResultSchema = z.object({
 });
 
 export type IntegrateResult = z.infer<typeof IntegrateResultSchema>;
+
+export const SearchModeSchema = z.enum(['hybrid', 'fts', 'semantic']);
+
+export type SearchMode = z.infer<typeof SearchModeSchema>;
+
+export const SearchResultItemSchema = z.object({
+  docId: z.string(),
+  docTitle: z.string(),
+  blockId: z.string(),
+  heading: z.string().nullable(),
+  snippet: z.string(),
+  score: z.number(),
+  matchType: z.enum(['fts', 'semantic', 'hybrid']),
+});
+
+export type SearchResultItem = z.infer<typeof SearchResultItemSchema>;
+
+export const SearchResponseSchema = z.object({
+  query: z.string(),
+  mode: SearchModeSchema,
+  results: z.array(SearchResultItemSchema),
+});
+
+export type SearchResponse = z.infer<typeof SearchResponseSchema>;

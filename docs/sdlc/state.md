@@ -41,7 +41,7 @@ Updated: 2026-10-27
   - [x] epic-02-prerequisite-chips-ui — merged 2026-10-18
 - [ ] 06-library-index-and-search — in progress
   - [x] epic-01-sqlite-store-and-readme — merged 2026-10-27
-  - [ ] epic-02-full-text-and-semantic-search — pending
+  - [x] epic-02-full-text-and-semantic-search — merged 2026-10-27
   - [ ] epic-03-agent-topic-deduplication — pending
 - [ ] 07-central-ability-record-and-cell-done — pending
 - [ ] 08-orbstack-caddy-auth-and-skill — pending

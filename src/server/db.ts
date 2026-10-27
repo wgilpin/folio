@@ -12,12 +12,13 @@ import {
   type PendingSuggestedEdit,
 } from '../shared/schema.js';
 import { extractToc, parseMarkdownBlocks } from './markdown.js';
+import { buildFtsTokens, computeSemanticEmbedding } from './search.js';
 
 export const LIBRARY_SQLITE_FILENAME = 'library.sqlite';
 export const LEGACY_NOTEBOOK_JSON_FILENAME = 'notebook.json';
 export const LEGACY_NOTEBOOK_BAK_FILENAME = 'notebook.json.bak';
 
-function initializeSchema(db: DatabaseSync): void {
+export function initializeSchema(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS documents (
       id TEXT PRIMARY KEY,
@@ -40,6 +41,14 @@ function initializeSchema(db: DatabaseSync): void {
       heading TEXT,
       embedding_json TEXT,
       PRIMARY KEY (doc_id, block_id)
+    );
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(
+      doc_id UNINDEXED,
+      block_id UNINDEXED,
+      heading,
+      markdown,
+      tokens
     );
 
     CREATE TABLE IF NOT EXISTS topic_links (
@@ -153,27 +162,56 @@ export function writeStateToSqlite(
       .prepare('SELECT DISTINCT doc_id FROM blocks')
       .all() as Array<{ doc_id: string }>;
     const deleteDocBlocks = db.prepare('DELETE FROM blocks WHERE doc_id = ?');
+    const deleteDocFts = db.prepare('DELETE FROM blocks_fts WHERE doc_id = ?');
     for (const row of existingBlockDocIds) {
       if (!currentDocIds.has(row.doc_id)) {
         deleteDocBlocks.run(row.doc_id);
+        deleteDocFts.run(row.doc_id);
       }
     }
 
     if (blocksByDocId) {
       const insertBlock = db.prepare(`
-        INSERT INTO blocks (doc_id, block_id, sort_order, markdown, heading)
+        INSERT INTO blocks (
+          doc_id,
+          block_id,
+          sort_order,
+          markdown,
+          heading,
+          embedding_json
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      const insertFts = db.prepare(`
+        INSERT INTO blocks_fts (doc_id, block_id, heading, markdown, tokens)
         VALUES (?, ?, ?, ?, ?)
       `);
       for (const [docId, blocks] of Object.entries(blocksByDocId)) {
         if (!currentDocIds.has(docId)) continue;
+        const docTitle = state.documents[docId]?.title ?? null;
         deleteDocBlocks.run(docId);
+        deleteDocFts.run(docId);
         blocks.forEach((block, idx) => {
+          const heading = extractPrimaryHeading(block);
+          const embedding = computeSemanticEmbedding(
+            block.markdown,
+            heading,
+            docTitle
+          );
+          const ftsTokens = buildFtsTokens(block.markdown, heading, docTitle);
           insertBlock.run(
             docId,
             block.id,
             idx,
             block.markdown,
-            extractPrimaryHeading(block)
+            heading,
+            JSON.stringify(embedding)
+          );
+          insertFts.run(
+            docId,
+            block.id,
+            heading ?? '',
+            block.markdown,
+            ftsTokens
           );
         });
       }
@@ -399,18 +437,49 @@ export async function syncDocumentBlocksToSqlite(
     initializeSchema(db);
     db.exec('BEGIN IMMEDIATE TRANSACTION');
     try {
+      const docRow = db
+        .prepare('SELECT title FROM documents WHERE id = ?')
+        .get(docId) as { title?: string } | undefined;
+      const docTitle = docRow?.title ?? null;
+
       db.prepare('DELETE FROM blocks WHERE doc_id = ?').run(docId);
+      db.prepare('DELETE FROM blocks_fts WHERE doc_id = ?').run(docId);
       const insertBlock = db.prepare(`
-        INSERT INTO blocks (doc_id, block_id, sort_order, markdown, heading)
+        INSERT INTO blocks (
+          doc_id,
+          block_id,
+          sort_order,
+          markdown,
+          heading,
+          embedding_json
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      const insertFts = db.prepare(`
+        INSERT INTO blocks_fts (doc_id, block_id, heading, markdown, tokens)
         VALUES (?, ?, ?, ?, ?)
       `);
       blocks.forEach((block, idx) => {
+        const heading = extractPrimaryHeading(block);
+        const embedding = computeSemanticEmbedding(
+          block.markdown,
+          heading,
+          docTitle
+        );
+        const ftsTokens = buildFtsTokens(block.markdown, heading, docTitle);
         insertBlock.run(
           docId,
           block.id,
           idx,
           block.markdown,
-          extractPrimaryHeading(block)
+          heading,
+          JSON.stringify(embedding)
+        );
+        insertFts.run(
+          docId,
+          block.id,
+          heading ?? '',
+          block.markdown,
+          ftsTokens
         );
       });
       db.exec('COMMIT');

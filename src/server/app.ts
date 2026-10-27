@@ -7,11 +7,13 @@ import {
   IntegrateResultSchema,
   PedagogicalProfileIdSchema,
   ReasoningEffortSchema,
+  SearchModeSchema,
   SeedResultSchema,
   TopicFamiliaritySchema,
   type ChatMessage,
 } from '../shared/schema.js';
 import { buildBoundedCellContext, buildDocumentContext } from './context.js';
+import { searchWorkspaceLibrary } from './search.js';
 import {
   defaultBranchGenerator,
   defaultCellChatGenerator,
@@ -180,6 +182,23 @@ export function createApp(options: CreateAppOptions): Hono {
       profile,
       modelId: settings.modelId,
     });
+  });
+
+  app.get('/api/search', async (c) => {
+    await ensureWorkspaceInitialized();
+    const q = c.req.query('q') ?? '';
+    const rawMode = c.req.query('mode') ?? 'hybrid';
+    const parsedMode = SearchModeSchema.safeParse(rawMode);
+    const mode = parsedMode.success ? parsedMode.data : 'hybrid';
+    const rawLimit = c.req.query('limit');
+    const limit = rawLimit ? Number.parseInt(rawLimit, 10) : undefined;
+
+    const response = await searchWorkspaceLibrary(store.workspaceDir, q, {
+      mode,
+      ...(limit && Number.isFinite(limit) ? { limit } : {}),
+    });
+
+    return c.json(response);
   });
 
   app.get('/api/profile', async (c) => {
