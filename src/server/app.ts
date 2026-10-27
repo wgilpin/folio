@@ -270,6 +270,11 @@ export function createApp(options: CreateAppOptions): Hono {
         });
       }
 
+      const relatedLibraryDocs = await store.findRelatedLibraryDocs(
+        parsedReq.data.topic,
+        [parentDocId]
+      );
+
       const seedResult = SeedResultSchema.parse(
         await seedGenerator(parsedReq.data.topic, {
           modelId: settings.modelId,
@@ -278,6 +283,7 @@ export function createApp(options: CreateAppOptions): Hono {
           ...(Object.keys(currentProfile.topics).length > 0
             ? { learnerProfile: currentProfile }
             : {}),
+          ...(relatedLibraryDocs.length > 0 ? { relatedLibraryDocs } : {}),
         })
       );
 
@@ -410,6 +416,30 @@ export function createApp(options: CreateAppOptions): Hono {
     try {
       const settings = await store.getSettings(getDefaultModelId());
       const profile = await profileStore.loadProfile();
+
+      const existing = await store.findExistingRootOrLibraryDocumentByPrompt(
+        parsedReq.data.prompt
+      );
+      if (existing && existing.document) {
+        return c.json({
+          document: existing.document,
+          blocks: existing.blocks,
+          toc: existing.toc,
+          documents: existing.documents,
+          activeChat: existing.activeChat,
+          pendingEdits: existing.pendingEdits,
+          settings,
+          workspaceDir: store.workspaceDir,
+          workspaces: Array.from(knownWorkspaces),
+          profile,
+          modelId: settings.modelId,
+        });
+      }
+
+      const relatedLibraryDocs = await store.findRelatedLibraryDocs(
+        parsedReq.data.prompt
+      );
+
       const seedResult = SeedResultSchema.parse(
         await seedGenerator(parsedReq.data.prompt, {
           modelId: settings.modelId,
@@ -418,6 +448,7 @@ export function createApp(options: CreateAppOptions): Hono {
           ...(Object.keys(profile.topics).length > 0
             ? { learnerProfile: profile }
             : {}),
+          ...(relatedLibraryDocs.length > 0 ? { relatedLibraryDocs } : {}),
         })
       );
 
@@ -623,6 +654,10 @@ export function createApp(options: CreateAppOptions): Hono {
       const context = await buildDocumentContext(store, docId);
       const settings = await store.getSettings(getDefaultModelId());
       const profile = await profileStore.loadProfile();
+      const chatQuery = activeChat.messages.map((m) => m.content).join(' ');
+      const relatedLibraryDocs = await store.findRelatedLibraryDocs(chatQuery, [
+        docId,
+      ]);
 
       const branchResult = BranchResultSchema.parse(
         await documentBranchGenerator({
@@ -634,6 +669,7 @@ export function createApp(options: CreateAppOptions): Hono {
           ...(Object.keys(profile.topics).length > 0
             ? { learnerProfile: profile }
             : {}),
+          ...(relatedLibraryDocs.length > 0 ? { relatedLibraryDocs } : {}),
         })
       );
 
@@ -1055,6 +1091,10 @@ export function createApp(options: CreateAppOptions): Hono {
       const initialPrereqDocIds = {
         ...(initialParentDoc?.prerequisiteDocIds ?? {}),
       };
+      const chatQuery = activeChat.messages.map((m) => m.content).join(' ');
+      const relatedLibraryDocs = await store.findRelatedLibraryDocs(chatQuery, [
+        docId,
+      ]);
 
       const branchResult = BranchResultSchema.parse(
         await branchGenerator({
@@ -1066,6 +1106,7 @@ export function createApp(options: CreateAppOptions): Hono {
           ...(Object.keys(profile.topics).length > 0
             ? { learnerProfile: profile }
             : {}),
+          ...(relatedLibraryDocs.length > 0 ? { relatedLibraryDocs } : {}),
         })
       );
 
