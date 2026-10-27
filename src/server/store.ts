@@ -13,6 +13,7 @@ import {
   type NotebookSettings,
   type NotebookState,
   type PendingSuggestedEdit,
+  type RelatedLibraryDoc,
   type SeedResult,
   type TocItem,
 } from '../shared/schema.js';
@@ -32,6 +33,7 @@ import {
   syncDocumentBlocksToSqlite,
 } from './db.js';
 import { isReservedReadmeSlug, writeWorkspaceReadme } from './readme.js';
+import { searchWorkspaceLibrary } from './search.js';
 
 
 export interface LoadedDocument {
@@ -399,8 +401,13 @@ export class WorkspaceStore {
         ? extractPrerequisitesFromBlock0(blocks[0].markdown)
         : undefined);
 
-    const resolvedPrerequisiteDocIds =
-      options?.prerequisiteDocIds ?? existing?.prerequisiteDocIds;
+    const resolvedPrerequisiteDocIds = this.autoLinkPrerequisitesForDocument(
+      state,
+      docId,
+      resolvedPrerequisites,
+      blocks,
+      options?.prerequisiteDocIds ?? existing?.prerequisiteDocIds
+    );
 
     const docNode: DocumentNode = {
       id: docId,
@@ -961,6 +968,13 @@ export class WorkspaceStore {
           ? getConciseTitle(childTitle)
           : undefined);
 
+      const childPrerequisiteDocIds = this.autoLinkPrerequisitesForDocument(
+        state,
+        childDocId,
+        resolvedPrerequisites,
+        childBlocks
+      );
+
       const childDocNode: DocumentNode = {
         id: childDocId,
         title: childTitle,
@@ -971,6 +985,10 @@ export class WorkspaceStore {
         childDocIds: [],
         ...(resolvedPrerequisites && resolvedPrerequisites.length > 0
           ? { prerequisites: resolvedPrerequisites }
+          : {}),
+        ...(childPrerequisiteDocIds &&
+        Object.keys(childPrerequisiteDocIds).length > 0
+          ? { prerequisiteDocIds: childPrerequisiteDocIds }
           : {}),
       };
 
@@ -1182,6 +1200,13 @@ export class WorkspaceStore {
             ? extractPrerequisitesFromBlock0(childBlocks[0].markdown)
             : undefined;
 
+      const childPrerequisiteDocIds = this.autoLinkPrerequisitesForDocument(
+        state,
+        childDocId,
+        resolvedPrerequisites,
+        childBlocks
+      );
+
       const childDocNode: DocumentNode = {
         id: childDocId,
         title: childTitle,
@@ -1192,6 +1217,10 @@ export class WorkspaceStore {
         childDocIds: [],
         ...(resolvedPrerequisites && resolvedPrerequisites.length > 0
           ? { prerequisites: resolvedPrerequisites }
+          : {}),
+        ...(childPrerequisiteDocIds &&
+        Object.keys(childPrerequisiteDocIds).length > 0
+          ? { prerequisiteDocIds: childPrerequisiteDocIds }
           : {}),
       };
 
@@ -1228,6 +1257,232 @@ export class WorkspaceStore {
   }
 
 
+  private findLibraryDocumentByTopic(
+    state: NotebookState,
+    topic: string,
+    options?: {
+      excludeDocIds?: string[];
+      preferParentDocId?: string;
+      strictExactOnly?: boolean;
+    }
+  ): DocumentNode | undefined {
+    const cleanTopic = topic.trim();
+    if (!cleanTopic) return undefined;
+    const excludeSet = new Set(options?.excludeDocIds ?? []);
+    const normTopic = cleanTopic.toLowerCase();
+    const topicSlug = slugifyTitle(cleanTopic);
+    const conciseTopicSlug = slugifyTitle(getConciseTitle(cleanTopic));
+
+    // 1. Check global topicDocIds (exact or case-insensitive key)
+    if (state.topicDocIds) {
+      const directMapped = state.topicDocIds[cleanTopic];
+      if (
+        directMapped &&
+        !excludeSet.has(directMapped) &&
+        state.documents[directMapped]
+      ) {
+        return state.documents[directMapped];
+      }
+      for (const [k, docId] of Object.entries(state.topicDocIds)) {
+        if (
+          k.trim().toLowerCase() === normTopic &&
+          !excludeSet.has(docId) &&
+          state.documents[docId]
+        ) {
+          return state.documents[docId];
+        }
+      }
+    }
+
+    const candidates = Object.values(state.documents).filter(
+      (doc) => !excludeSet.has(doc.id)
+    );
+    if (options?.preferParentDocId) {
+      candidates.sort((a, b) => {
+        const aChild = a.parentId === options.preferParentDocId ? 0 : 1;
+        const bChild = b.parentId === options.preferParentDocId ? 0 : 1;
+        return aChild - bChild;
+      });
+    }
+
+    // 2. Check exact title, shortTitle, conciseTitle, or slug match across all documents
+    const exactMatch = candidates.find((doc) => {
+      const normTitle = doc.title.trim().toLowerCase();
+      const normShortTitle = doc.shortTitle
+        ? doc.shortTitle.trim().toLowerCase()
+        : '';
+      const normConcise = getConciseTitle(
+        doc.title,
+        doc.shortTitle
+      ).toLowerCase();
+      return (
+        normTitle === normTopic ||
+        (normShortTitle.length > 0 && normShortTitle === normTopic) ||
+        normConcise === normTopic ||
+        doc.id === topicSlug ||
+        doc.id === conciseTopicSlug ||
+        slugifyTitle(doc.title) === topicSlug
+      );
+    });
+    if (exactMatch || options?.strictExactOnly) {
+      return exactMatch;
+    }
+
+    // 3. Fallback substring / keyword overlap match for prerequisite chips
+    const topicWords = normTopic
+      .split(/[^a-z0-9]+/)
+      .filter(
+        (w) => w.length > 3 && !['with', 'from', 'into', 'that'].includes(w)
+      );
+
+    return candidates.find((doc) => {
+      const normTitle = doc.title.trim().toLowerCase();
+      const normShortTitle = doc.shortTitle
+        ? doc.shortTitle.trim().toLowerCase()
+        : '';
+      const wordMatches =
+        topicWords.length >= 2 &&
+        topicWords.every(
+          (w) =>
+            normTitle.includes(w) ||
+            normShortTitle.includes(w) ||
+            doc.id.includes(w)
+        );
+      return (
+        normTitle.includes(normTopic) ||
+        normTopic.includes(normTitle) ||
+        (normShortTitle.length > 0 &&
+          (normShortTitle.includes(normTopic) ||
+            normTopic.includes(normShortTitle))) ||
+        (topicSlug.length >= 4 && doc.id.includes(topicSlug)) ||
+        (conciseTopicSlug.length >= 4 && doc.id.includes(conciseTopicSlug)) ||
+        wordMatches
+      );
+    });
+  }
+
+  private autoLinkPrerequisitesForDocument(
+    state: NotebookState,
+    docId: string,
+    prerequisites: string[] | undefined,
+    blocks: ConceptBlock[],
+    initialPrerequisiteDocIds?: Record<string, string>
+  ): Record<string, string> | undefined {
+    const map: Record<string, string> = {
+      ...(initialPrerequisiteDocIds ?? {}),
+    };
+    if (!prerequisites || prerequisites.length === 0) {
+      return Object.keys(map).length > 0 ? map : undefined;
+    }
+
+    const firstBlock = blocks[0];
+    const canAppendToBlock0 =
+      firstBlock &&
+      (firstBlock.id === 'blk_00' || isPrerequisiteBlock(firstBlock));
+
+    for (const rawTopic of prerequisites) {
+      const cleanTopic = rawTopic.trim();
+      if (!cleanTopic) continue;
+
+      const existingMappedId = map[cleanTopic];
+      const matchedDoc =
+        existingMappedId &&
+        existingMappedId !== docId &&
+        state.documents[existingMappedId]
+          ? state.documents[existingMappedId]
+          : this.findLibraryDocumentByTopic(state, cleanTopic, {
+              excludeDocIds: [docId],
+            });
+
+      if (!matchedDoc) continue;
+
+      map[cleanTopic] = matchedDoc.id;
+      state.topicDocIds = {
+        ...(state.topicDocIds ?? {}),
+        [cleanTopic]: matchedDoc.id,
+      };
+
+      if (canAppendToBlock0) {
+        const conciseTargetTitle = getConciseTitle(
+          matchedDoc.title,
+          matchedDoc.shortTitle
+        );
+        const linkMarkdown = `[→ Deep dive: ${conciseTargetTitle}](${matchedDoc.filename})`;
+        if (!blocks[0].markdown.includes(`(${matchedDoc.filename})`)) {
+          blocks[0] = {
+            ...blocks[0],
+            markdown: `${blocks[0].markdown.trim()}\n\n${linkMarkdown}`,
+          };
+        }
+      }
+    }
+
+    return Object.keys(map).length > 0 ? map : undefined;
+  }
+
+  async findExistingRootOrLibraryDocumentByPrompt(
+    prompt: string
+  ): Promise<LoadedDocument | null> {
+    const state = await this.loadState();
+    const matchedDoc = this.findLibraryDocumentByTopic(state, prompt, {
+      strictExactOnly: true,
+    });
+    if (!matchedDoc) {
+      return null;
+    }
+    return this.loadDocument(matchedDoc.id);
+  }
+
+  async findRelatedLibraryDocs(
+    queryText: string,
+    excludeDocIds: string[] = []
+  ): Promise<RelatedLibraryDoc[]> {
+    const cleanQuery = queryText.trim();
+    if (!cleanQuery) {
+      return [];
+    }
+
+    const state = await this.loadState();
+    const excludeSet = new Set(excludeDocIds);
+    const searchResponse = await searchWorkspaceLibrary(
+      this.workspaceDir,
+      cleanQuery,
+      {
+        mode: 'hybrid',
+        limit: 12,
+      }
+    );
+
+    const snippetsByDocId = new Map<string, string[]>();
+    for (const item of searchResponse.results) {
+      if (excludeSet.has(item.docId)) continue;
+      if (!state.documents[item.docId]) continue;
+      const list = snippetsByDocId.get(item.docId) ?? [];
+      if (list.length < 2) {
+        const headingPrefix = item.heading ? `${item.heading}: ` : '';
+        list.push(`[${item.blockId}] ${headingPrefix}${item.snippet}`);
+        snippetsByDocId.set(item.docId, list);
+      }
+    }
+
+    const related: RelatedLibraryDoc[] = [];
+    for (const [docId, snippets] of snippetsByDocId.entries()) {
+      const doc = state.documents[docId];
+      if (!doc) continue;
+      related.push({
+        docId: doc.id,
+        title: doc.title,
+        filename: doc.filename,
+        summary: snippets.join(' | '),
+      });
+      if (related.length >= 5) {
+        break;
+      }
+    }
+
+    return related;
+  }
+
   async findExistingPrerequisiteDocument(
     parentDocId: string,
     topic: string
@@ -1236,59 +1491,17 @@ export class WorkspaceStore {
     const cleanTopic = topic.trim();
     const parentDoc = state.documents[parentDocId];
 
-    // 1. Check structured prerequisiteDocIds on the parent document or global topicDocIds
-    const mappedDocId =
-      parentDoc?.prerequisiteDocIds?.[cleanTopic] ??
-      state.topicDocIds?.[cleanTopic];
-    if (mappedDocId && state.documents[mappedDocId]) {
-      if (
-        parentDoc &&
-        parentDoc.prerequisiteDocIds?.[cleanTopic] !== mappedDocId
-      ) {
-        parentDoc.prerequisiteDocIds = {
-          ...(parentDoc.prerequisiteDocIds ?? {}),
-          [cleanTopic]: mappedDocId,
-        };
-        if (!parentDoc.childDocIds.includes(mappedDocId)) {
-          parentDoc.childDocIds = [...parentDoc.childDocIds, mappedDocId];
-        }
-        await this.saveState(state);
-      }
-      return this.loadDocument(mappedDocId);
-    }
-
-    // 2. Fallback: check existing child documents by title/slug/keyword overlap and backfill structured map
-    const normTopic = cleanTopic.toLowerCase();
-    const topicSlug = slugifyTitle(cleanTopic);
-    const conciseTopicSlug = slugifyTitle(getConciseTitle(cleanTopic));
-    const topicWords = normTopic
-      .split(/[^a-z0-9]+/)
-      .filter((w) => w.length > 3 && !['with', 'from', 'into', 'that'].includes(w));
-
-    const existingDoc = Object.values(state.documents).find((doc) => {
-      if (doc.parentId !== parentDocId) return false;
-      const normTitle = doc.title.trim().toLowerCase();
-      const normShortTitle = doc.shortTitle ? doc.shortTitle.trim().toLowerCase() : '';
-      const wordMatches =
-        topicWords.length >= 2 &&
-        topicWords.every(
-          (w) => normTitle.includes(w) || normShortTitle.includes(w) || doc.id.includes(w)
-        );
-      return (
-        normTitle === normTopic ||
-        normTitle.includes(normTopic) ||
-        normTopic.includes(normTitle) ||
-        (normShortTitle &&
-          (normShortTitle === normTopic ||
-            normShortTitle.includes(normTopic) ||
-            normTopic.includes(normShortTitle))) ||
-        doc.id === topicSlug ||
-        doc.id === conciseTopicSlug ||
-        doc.id.includes(topicSlug) ||
-        doc.id.includes(conciseTopicSlug) ||
-        wordMatches
-      );
-    });
+    // 1. Check structured prerequisiteDocIds on the parent document or global library-wide topic lookup
+    const directParentMappedId = parentDoc?.prerequisiteDocIds?.[cleanTopic];
+    const existingDoc =
+      directParentMappedId &&
+      directParentMappedId !== parentDocId &&
+      state.documents[directParentMappedId]
+        ? state.documents[directParentMappedId]
+        : this.findLibraryDocumentByTopic(state, cleanTopic, {
+            excludeDocIds: [parentDocId],
+            preferParentDocId: parentDocId,
+          });
 
     if (!existingDoc) {
       return null;
@@ -1299,11 +1512,54 @@ export class WorkspaceStore {
         ...(parentDoc.prerequisiteDocIds ?? {}),
         [cleanTopic]: existingDoc.id,
       };
+      if (!parentDoc.childDocIds.includes(existingDoc.id)) {
+        parentDoc.childDocIds = [...parentDoc.childDocIds, existingDoc.id];
+      }
       state.topicDocIds = {
         ...(state.topicDocIds ?? {}),
         [cleanTopic]: existingDoc.id,
       };
-      await this.saveState(state);
+
+      const parentFilePath = path.join(this.workspaceDir, parentDoc.filename);
+      let updatedParentBlocks: ConceptBlock[] | undefined;
+      try {
+        const rawParentMd = await fs.readFile(parentFilePath, 'utf-8');
+        const parsedParentBlocks = parseMarkdownBlocks(rawParentMd);
+        if (parsedParentBlocks.length > 0) {
+          const targetIdx = parsedParentBlocks.findIndex(
+            (b) => b.id === 'blk_00' || isPrerequisiteBlock(b)
+          );
+          const idx = targetIdx !== -1 ? targetIdx : 0;
+          const conciseTargetTitle = getConciseTitle(
+            existingDoc.title,
+            existingDoc.shortTitle
+          );
+          const linkMarkdown = `[→ Deep dive: ${conciseTargetTitle}](${existingDoc.filename})`;
+          if (
+            !parsedParentBlocks[idx].markdown.includes(
+              `(${existingDoc.filename})`
+            )
+          ) {
+            parsedParentBlocks[idx] = {
+              ...parsedParentBlocks[idx],
+              markdown: `${parsedParentBlocks[idx].markdown.trim()}\n\n${linkMarkdown}`,
+            };
+            await fs.writeFile(
+              parentFilePath,
+              serializeMarkdownBlocks(parsedParentBlocks),
+              'utf-8'
+            );
+            updatedParentBlocks = parsedParentBlocks;
+          }
+        }
+      } catch {
+        // Parent markdown file not on disk
+      }
+
+      await this.saveState(
+        state,
+        updatedParentBlocks ? { [parentDocId]: updatedParentBlocks } : undefined
+      );
     }
 
     return this.loadDocument(existingDoc.id);

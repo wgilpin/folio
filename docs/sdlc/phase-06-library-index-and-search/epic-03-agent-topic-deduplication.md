@@ -34,3 +34,61 @@ Before generating a document on `POST /api/doc/seed` or `POST /api/prerequisites
 ## Notes
 
 - Direct reuse on `POST /api/doc/seed` should only trigger when the normalized prompt matches an existing document's title, shortTitle, slug, or registered topic key (so a long, specific prompt that merely mentions an existing topic still seeds a new document while receiving the existing document in `relatedLibraryDocs`).
+
+---
+
+## Build note — 2026-10-27
+
+**Result:** green
+
+### Tasks done
+
+- Added `RelatedLibraryDocSchema` and `RelatedLibraryDoc` in `src/shared/schema.ts`.
+- Extended `SeedGeneratorOptions`, `BranchGenerator`, and `DocumentBranchGenerator` in `src/server/llm.ts` with `relatedLibraryDocs?: RelatedLibraryDoc[]` and added `formatRelatedLibraryDocsPrompt` to instruct generators to cross-link (`[→ Deep dive: <Title>](<filename>.md)`) and build on existing library coverage rather than re-deriving from scratch.
+- Upgraded `WorkspaceStore` in `src/server/store.ts` with library-wide topic lookup (`findLibraryDocumentByTopic`), `findExistingRootOrLibraryDocumentByPrompt`, `findRelatedLibraryDocs`, library-wide `findExistingPrerequisiteDocument` (updating `prerequisiteDocIds`, `childDocIds`, `topicDocIds`, and appending `[→ Deep dive: ...]` to `blk_00`), and `autoLinkPrerequisitesForDocument` on document save/seed/branch.
+- Wired pre-flight deduplication and `relatedLibraryDocs` search retrieval into `POST /api/doc/seed`, `POST /api/prerequisites/seed`, `POST /api/blocks/:id/branch`, and `POST /api/doc/branch` in `src/server/app.ts`.
+
+### Tests added
+
+- `src/server/__tests__/agent-deduplication.test.ts` — `POST /api/prerequisites/seed and POST /api/doc/seed reuse and cross-link an existing document anywhere in the library without calling seedGenerator`
+- `src/server/__tests__/agent-deduplication.test.ts` — `passes relatedLibraryDocs into seed/branch generators and auto-links matching Block 0 prerequisites to existing library documents`
+
+### Suite result
+
+- `npm test`: `Test Files 22 passed (22), Tests 76 passed (76)`
+- `npm run typecheck`: `tsc --noEmit` (0 errors)
+
+### Deviations from the plan
+
+None
+
+### Follow-ups
+
+None
+
+---
+
+## Review — 2026-10-27
+
+**Verdict:** pass
+
+### Acceptance criteria
+
+| AC | Met | Proved by |
+|---|---|---|
+| AC-1 | yes | `src/server/__tests__/agent-deduplication.test.ts` — `POST /api/prerequisites/seed and POST /api/doc/seed reuse and cross-link an existing document anywhere in the library without calling seedGenerator` |
+| AC-2 | yes | `src/server/__tests__/agent-deduplication.test.ts` — `passes relatedLibraryDocs into seed/branch generators and auto-links matching Block 0 prerequisites to existing library documents` |
+| AC-3 | yes | `src/server/__tests__/agent-deduplication.test.ts` — `passes relatedLibraryDocs into seed/branch generators and auto-links matching Block 0 prerequisites to existing library documents` |
+
+### Drift
+
+None
+
+### Findings
+
+None
+
+### Follow-ups
+
+None
+

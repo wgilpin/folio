@@ -14,16 +14,16 @@ Persisted the user-configured Root Folder (`workspaceDir` and `workspaces`) in `
 ## ISS-2 — Add hierarchical topic index (`README.md`), full-text search, semantic search, and agent topic deduplication
 
 **Raised:** 2026-10-19
-**Status:** scheduled
-**Lands in:** phase 06
+**Status:** fixed 2026-10-27
+**Lands in:** phase 06 (fixed on main)
 
 Flat `.md` storage in the root folder needs an auto-generated hierarchical `README.md` map for external human readers plus full-text and semantic search across Concept Blocks so both the user and the LLM agent can find and cross-link existing topic expansions instead of duplicating them.
 
 ## ISS-3 — Replace monolithic `.folio/notebook.json` with a scalable local database (`.folio/library.sqlite`) as document trees and prerequisite graphs grow
 
 **Raised:** 2026-10-19
-**Status:** scheduled
-**Lands in:** phase 06
+**Status:** fixed 2026-10-27
+**Lands in:** phase 06 (fixed on main)
 
 As the user builds many documents, deep tree layers, and cross-document `prerequisiteDocIds` / `topicDocIds` edges, `.folio/notebook.json` will grow too large to read/write as a single JSON blob on every request and should be replaced by a local SQLite store (`.folio/library.sqlite`) alongside FTS/vector search in Phase 06.
 

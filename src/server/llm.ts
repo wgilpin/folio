@@ -16,6 +16,7 @@ import {
   type NotebookSettings,
   type PedagogicalProfileId,
   type ReasoningEffort,
+  type RelatedLibraryDoc,
   type SeedResult,
 } from '../shared/schema.js';
 import type { BoundedCellContext, DocumentContext } from './context.js';
@@ -26,6 +27,7 @@ export interface SeedGeneratorOptions {
   reasoningEffort?: ReasoningEffort;
   pedagogicalPrompt?: string;
   learnerProfile?: LearnerProfile;
+  relatedLibraryDocs?: RelatedLibraryDoc[];
 }
 
 export type SeedGenerator = (
@@ -56,6 +58,7 @@ export type BranchGenerator = (input: {
   reasoningEffort?: ReasoningEffort;
   pedagogicalPrompt?: string;
   learnerProfile?: LearnerProfile;
+  relatedLibraryDocs?: RelatedLibraryDoc[];
 }) => Promise<BranchResult>;
 
 export type DocumentChatGenerator = (input: {
@@ -81,7 +84,27 @@ export type DocumentBranchGenerator = (input: {
   reasoningEffort?: ReasoningEffort;
   pedagogicalPrompt?: string;
   learnerProfile?: LearnerProfile;
+  relatedLibraryDocs?: RelatedLibraryDoc[];
 }) => Promise<BranchResult>;
+
+
+export function formatRelatedLibraryDocsPrompt(
+  docs?: RelatedLibraryDoc[]
+): string {
+  if (!docs || docs.length === 0) {
+    return '';
+  }
+
+  const lines = [
+    'Existing Library Documents (Pre-Flight Deduplication & Cross-Linking):',
+    'The following related documents already exist in the workspace library. Do NOT re-derive their core material from scratch; instead build upon them and cross-link to them using `[→ Deep dive: <Title>](<filename>.md)` where appropriate:',
+    ...docs.map(
+      (doc) => `- ${doc.title} (${doc.filename}): ${doc.summary}`
+    ),
+  ];
+
+  return lines.join('\n');
+}
 
 
 export function formatLearnerProfilePrompt(profile?: LearnerProfile): string {
@@ -237,6 +260,10 @@ export const defaultSeedGenerator: SeedGenerator = async (
     options?.pedagogicalPrompt ?? resolvePedagogicalPrompt();
   const model = resolveLanguageModel(modelId);
 
+  const relatedLibrarySection = formatRelatedLibraryDocsPrompt(
+    options?.relatedLibraryDocs
+  );
+
   const { object } = await generateObject({
     model,
     schema: SeedResultSchema,
@@ -244,6 +271,7 @@ export const defaultSeedGenerator: SeedGenerator = async (
       'You are an editorial notebook author writing for a curious, intelligent learner exploring a subject.',
       pedagogicalPrompt,
       formatLearnerProfilePrompt(options?.learnerProfile),
+      ...(relatedLibrarySection ? [relatedLibrarySection] : []),
       KATEX_MATH_FORMATTING_RULES,
       `Reasoning Effort: ${reasoningEffort}`,
       TOC_AND_PREREQUISITES_ORDERING_RULES,
@@ -331,12 +359,15 @@ export const defaultBranchGenerator: BranchGenerator = async ({
   reasoningEffort = 'high',
   pedagogicalPrompt,
   learnerProfile,
+  relatedLibraryDocs,
 }): Promise<BranchResult> => {
   const model = resolveLanguageModel(modelId);
   const resolvedPedagogy = pedagogicalPrompt ?? resolvePedagogicalPrompt();
   const transcript = messages
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
     .join('\n\n');
+  const relatedLibrarySection =
+    formatRelatedLibraryDocsPrompt(relatedLibraryDocs);
 
   const { object } = await generateObject({
     model,
@@ -345,6 +376,7 @@ export const defaultBranchGenerator: BranchGenerator = async ({
       'You are an editorial notebook author branching dedicated deep-dive sub-documents from an ephemeral Q&A chat on Target Block N.',
       resolvedPedagogy,
       formatLearnerProfilePrompt(learnerProfile),
+      ...(relatedLibrarySection ? [relatedLibrarySection] : []),
       KATEX_MATH_FORMATTING_RULES,
       `Reasoning Effort: ${reasoningEffort}`,
       'Generate one or more deep-dive sub-documents in `branches` to thoroughly unpack the sub-topics explored in the chat:',
@@ -461,12 +493,15 @@ export const defaultDocumentBranchGenerator: DocumentBranchGenerator = async ({
   reasoningEffort = 'high',
   pedagogicalPrompt,
   learnerProfile,
+  relatedLibraryDocs,
 }): Promise<BranchResult> => {
   const model = resolveLanguageModel(modelId);
   const resolvedPedagogy = pedagogicalPrompt ?? resolvePedagogicalPrompt();
   const transcript = messages
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
     .join('\n\n');
+  const relatedLibrarySection =
+    formatRelatedLibraryDocsPrompt(relatedLibraryDocs);
 
   const { object } = await generateObject({
     model,
@@ -475,6 +510,7 @@ export const defaultDocumentBranchGenerator: DocumentBranchGenerator = async ({
       'You are an editorial notebook author branching dedicated deep-dive sub-documents from an open notebook discussion.',
       resolvedPedagogy,
       formatLearnerProfilePrompt(learnerProfile),
+      ...(relatedLibrarySection ? [relatedLibrarySection] : []),
       KATEX_MATH_FORMATTING_RULES,
       `Reasoning Effort: ${reasoningEffort}`,
       'Generate one or more deep-dive sub-documents in `branches` to thoroughly unpack the sub-topics explored in the chat:',

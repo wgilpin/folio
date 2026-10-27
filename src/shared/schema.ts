@@ -223,3 +223,13 @@ export const SearchResponseSchema = z.object({
 });
 
 export type SearchResponse = z.infer<typeof SearchResponseSchema>;
+
+export const RelatedLibraryDocSchema = z.object({
+  docId: z.string(),
+  title: z.string(),
+  filename: z.string(),
+  summary: z.string(),
+});
+
+export type RelatedLibraryDoc = z.infer<typeof RelatedLibraryDocSchema>;
+
