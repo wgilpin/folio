@@ -33,3 +33,58 @@
 ## Out of scope
 
 - Mutating Concept Blocks from external read-only skill queries unless explicitly calling Folio's existing REST API.
+
+## Build note — 2026-10-27
+
+### Tasks done
+
+- Implemented `FolioSkillClient` and `formatAbilityRecordSummary` in `src/skill/folio-client.ts` supporting `getAbilityRecord()`, `searchLibrary()`, `listDocuments()`, and `getDocumentMarkdown()` with `Authorization: Bearer <apiKey>` and configurable `baseUrl` (`https://folio.teleosis.ai` default).
+- Added zero-dependency Node ESM CLI helper `skills/folio/scripts/folio-query.mjs` (`profile`, `search`, `docs`, `doc <docId>`).
+- Created cross-Mac agent skill `skills/folio/SKILL.md` with YAML frontmatter (`name: folio`, `description`) and CLI / `curl` reference for `folio.teleosis.ai` and `$TELEOSIS_API_KEY`.
+- Added automated integration test in `src/server/__tests__/folio-skill.test.ts` covering AC-1 and AC-2.
+
+### Tests added
+
+- `src/server/__tests__/folio-skill.test.ts` — `queries Learner Ability Record, searches Concept Blocks, lists documents, and fetches raw Markdown with Bearer token via FolioSkillClient and SKILL.md`
+
+### Suite result
+
+- `npm test`: `Test Files  26 passed (26)`, `Tests  84 passed (84)`
+- `npm run typecheck`: `tsc --noEmit` (0 errors)
+
+### Deviations from the plan
+
+- None.
+
+### Follow-ups
+
+- None.
+
+
+## Build note — 2026-10-27
+
+- **Tasks done:**
+  - Created `src/skill/folio-client.ts` exporting `FolioSkillClient` and `formatAbilityRecordSummary` (`getAbilityRecord`, `searchLibrary`, `listDocuments`, `getDocumentMarkdown`) with `Authorization: Bearer <apiKey>` authentication.
+  - Created `skills/folio/scripts/folio-query.mjs` zero-dependency CLI helper (`profile`, `search`, `docs`, `doc <docId>`).
+  - Created `skills/folio/SKILL.md` documenting cross-Mac Folio Skill usage (`FOLIO_URL`, `TELEOSIS_API_KEY`, CLI and `curl` commands).
+- **Tests added:**
+  - `src/server/__tests__/folio-skill.test.ts` — `queries Learner Ability Record, searches Concept Blocks, lists documents, and fetches raw Markdown with Bearer token via FolioSkillClient and SKILL.md`.
+- **Suite result:** 26 test files passed (84 tests total), `npm run typecheck` passed with 0 errors.
+- **Deviations from plan:** None.
+
+## Review — 2026-10-27
+
+**Verdict:** pass
+
+| Criterion | Met | Test | Notes |
+|---|---|---|---|
+| AC-1 | yes | `src/server/__tests__/folio-skill.test.ts` — `queries Learner Ability Record, searches Concept Blocks, lists documents, and fetches raw Markdown with Bearer token via FolioSkillClient and SKILL.md` | |
+| AC-2 | yes | `src/server/__tests__/folio-skill.test.ts` — `queries Learner Ability Record, searches Concept Blocks, lists documents, and fetches raw Markdown with Bearer token via FolioSkillClient and SKILL.md` | |
+
+### Drift
+
+None
+
+### Findings
+
+None
