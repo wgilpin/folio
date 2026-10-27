@@ -41,6 +41,7 @@ export type CellChatGenerator = (input: {
   modelId: string;
   reasoningEffort?: ReasoningEffort;
   pedagogicalPrompt?: string;
+  learnerProfile?: LearnerProfile;
 }) => Promise<string>;
 
 export type IntegrateGenerator = (input: {
@@ -49,6 +50,7 @@ export type IntegrateGenerator = (input: {
   modelId: string;
   reasoningEffort?: ReasoningEffort;
   pedagogicalPrompt?: string;
+  learnerProfile?: LearnerProfile;
 }) => Promise<IntegrateResult>;
 
 export type BranchGenerator = (input: {
@@ -67,6 +69,7 @@ export type DocumentChatGenerator = (input: {
   modelId: string;
   reasoningEffort?: ReasoningEffort;
   pedagogicalPrompt?: string;
+  learnerProfile?: LearnerProfile;
 }) => Promise<string>;
 
 export type DocumentIntegrateGenerator = (input: {
@@ -75,6 +78,7 @@ export type DocumentIntegrateGenerator = (input: {
   modelId: string;
   reasoningEffort?: ReasoningEffort;
   pedagogicalPrompt?: string;
+  learnerProfile?: LearnerProfile;
 }) => Promise<DocumentIntegrateResult>;
 
 export type DocumentBranchGenerator = (input: {
@@ -106,20 +110,40 @@ export function formatRelatedLibraryDocsPrompt(
   return lines.join('\n');
 }
 
+export function hasLearnerProfileContent(profile?: LearnerProfile): boolean {
+  if (!profile) return false;
+  return (
+    Object.keys(profile.topics ?? {}).length > 0 ||
+    Boolean(profile.background && profile.background.trim().length > 0) ||
+    Boolean(
+      profile.learningInstructions &&
+        profile.learningInstructions.trim().length > 0
+    ) ||
+    Boolean(profile.engagedSources && profile.engagedSources.length > 0)
+  );
+}
 
 export function formatLearnerProfilePrompt(profile?: LearnerProfile): string {
-  if (!profile || Object.keys(profile.topics).length === 0) {
+  if (!hasLearnerProfileContent(profile) || !profile) {
     return 'Learner Profile: No prior topics recorded yet. Assume prerequisites are unseen and ground concepts in plain-English intuition before introducing specialist terminology or (when applicable) mathematical formalism.';
   }
 
-  const known = Object.entries(profile.topics)
+  const known = Object.entries(profile.topics ?? {})
     .filter(([, status]) => status === 'known')
     .map(([topic]) => topic);
-  const learning = Object.entries(profile.topics)
+  const learning = Object.entries(profile.topics ?? {})
     .filter(([, status]) => status === 'learning')
     .map(([topic]) => topic);
 
   const lines = ['Learner Profile (cross-workspace familiarity):'];
+  if (profile.background && profile.background.trim()) {
+    lines.push(`- Learner Background: ${profile.background.trim()}`);
+  }
+  if (profile.learningInstructions && profile.learningInstructions.trim()) {
+    lines.push(
+      `- Standing Learning Instructions (ALWAYS follow these): ${profile.learningInstructions.trim()}`
+    );
+  }
   if (known.length > 0) {
     lines.push(
       `- Known topics (skip basic hand-holding and use standard terminology or formalism directly when referencing these): ${known.join(', ')}`
@@ -129,6 +153,22 @@ export function formatLearnerProfilePrompt(profile?: LearnerProfile): string {
     lines.push(
       `- Currently learning (bridge intuition with specialist terminology or formalism carefully): ${learning.join(', ')}`
     );
+  }
+  if (profile.engagedSources && profile.engagedSources.length > 0) {
+    const sourceSummaries = profile.engagedSources
+      .filter((s) => s.completedBlockIds.length > 0)
+      .map((s) => {
+        const sections =
+          s.completedSectionHeadings.length > 0
+            ? ` [${s.completedSectionHeadings.join('; ')}]`
+            : '';
+        return `${s.docTitle} (${s.completedBlockIds.length}/${s.totalBlocks} blocks done${sections})`;
+      });
+    if (sourceSummaries.length > 0) {
+      lines.push(
+        `- Engaged Sources & Completed Sections: ${sourceSummaries.join(' | ')}`
+      );
+    }
   }
   return lines.join('\n');
 }
@@ -288,6 +328,7 @@ export const defaultCellChatGenerator: CellChatGenerator = async ({
   modelId,
   reasoningEffort = 'high',
   pedagogicalPrompt,
+  learnerProfile,
 }): Promise<string> => {
   const model = resolveLanguageModel(modelId);
   const resolvedPedagogy = pedagogicalPrompt ?? resolvePedagogicalPrompt();
@@ -297,6 +338,7 @@ export const defaultCellChatGenerator: CellChatGenerator = async ({
       'You are an expert tutor answering questions about a specific Concept Block (Block N) inside a structured notebook.',
       'Explain concepts clearly, ground explanations in intuition and concrete examples (and ground equations in intuition when the topic is mathematical), and stay focused on the target block while respecting the surrounding [N-1, N, N+1] context.',
       resolvedPedagogy,
+      formatLearnerProfilePrompt(learnerProfile),
       KATEX_MATH_FORMATTING_RULES,
       `Reasoning Effort: ${reasoningEffort}`,
       '',
@@ -317,6 +359,7 @@ export const defaultIntegrateGenerator: IntegrateGenerator = async ({
   modelId,
   reasoningEffort = 'high',
   pedagogicalPrompt,
+  learnerProfile,
 }): Promise<IntegrateResult> => {
   const model = resolveLanguageModel(modelId);
   const resolvedPedagogy = pedagogicalPrompt ?? resolvePedagogicalPrompt();
@@ -331,6 +374,7 @@ export const defaultIntegrateGenerator: IntegrateGenerator = async ({
     system: [
       'You are an editorial notebook integrator.',
       resolvedPedagogy,
+      formatLearnerProfilePrompt(learnerProfile),
       KATEX_MATH_FORMATTING_RULES,
       `Reasoning Effort: ${reasoningEffort}`,
       'Given a bounded cell context ([N-1, N, N+1] and the Document Table of Contents) and an ephemeral Q&A chat transcript on Target Block N, synthesize the insights from the discussion into clean, self-contained notebook prose:',
@@ -426,6 +470,7 @@ export const defaultDocumentChatGenerator: DocumentChatGenerator = async ({
   modelId,
   reasoningEffort = 'high',
   pedagogicalPrompt,
+  learnerProfile,
 }): Promise<string> => {
   const model = resolveLanguageModel(modelId);
   const resolvedPedagogy = pedagogicalPrompt ?? resolvePedagogicalPrompt();
@@ -435,6 +480,7 @@ export const defaultDocumentChatGenerator: DocumentChatGenerator = async ({
       'You are an expert tutor answering holistic questions about a structured notebook document.',
       'Explain concepts clearly, synthesize across blocks when relevant, ground explanations in intuition and concrete examples, and stay aligned with the notebook content.',
       resolvedPedagogy,
+      formatLearnerProfilePrompt(learnerProfile),
       KATEX_MATH_FORMATTING_RULES,
       `Reasoning Effort: ${reasoningEffort}`,
       '',
@@ -455,6 +501,7 @@ export const defaultDocumentIntegrateGenerator: DocumentIntegrateGenerator = asy
   modelId,
   reasoningEffort = 'high',
   pedagogicalPrompt,
+  learnerProfile,
 }): Promise<DocumentIntegrateResult> => {
   const model = resolveLanguageModel(modelId);
   const resolvedPedagogy = pedagogicalPrompt ?? resolvePedagogicalPrompt();
@@ -468,6 +515,7 @@ export const defaultDocumentIntegrateGenerator: DocumentIntegrateGenerator = asy
     system: [
       'You are an editorial notebook integrator.',
       resolvedPedagogy,
+      formatLearnerProfilePrompt(learnerProfile),
       KATEX_MATH_FORMATTING_RULES,
       `Reasoning Effort: ${reasoningEffort}`,
       'Given the document context and a notebook-level Q&A chat transcript, synthesize the discussion into targeted updates for existing cards and/or newly appended concept blocks:',

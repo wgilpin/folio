@@ -40,6 +40,7 @@ export function initializeSchema(db: DatabaseSync): void {
       markdown TEXT NOT NULL,
       heading TEXT,
       embedding_json TEXT,
+      done INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (doc_id, block_id)
     );
 
@@ -82,6 +83,12 @@ export function initializeSchema(db: DatabaseSync): void {
       value_json TEXT NOT NULL
     );
   `);
+
+  try {
+    db.exec('ALTER TABLE blocks ADD COLUMN done INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // Column already exists
+  }
 }
 
 function extractPrimaryHeading(block: ConceptBlock): string | null {
@@ -178,8 +185,9 @@ export function writeStateToSqlite(
           sort_order,
           markdown,
           heading,
-          embedding_json
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          embedding_json,
+          done
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
       const insertFts = db.prepare(`
         INSERT INTO blocks_fts (doc_id, block_id, heading, markdown, tokens)
@@ -204,7 +212,8 @@ export function writeStateToSqlite(
             idx,
             block.markdown,
             heading,
-            JSON.stringify(embedding)
+            JSON.stringify(embedding),
+            block.done ? 1 : 0
           );
           insertFts.run(
             docId,
@@ -451,8 +460,9 @@ export async function syncDocumentBlocksToSqlite(
           sort_order,
           markdown,
           heading,
-          embedding_json
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          embedding_json,
+          done
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
       const insertFts = db.prepare(`
         INSERT INTO blocks_fts (doc_id, block_id, heading, markdown, tokens)
@@ -472,7 +482,8 @@ export async function syncDocumentBlocksToSqlite(
           idx,
           block.markdown,
           heading,
-          JSON.stringify(embedding)
+          JSON.stringify(embedding),
+          block.done ? 1 : 0
         );
         insertFts.run(
           docId,
