@@ -30,8 +30,8 @@ As the user builds many documents, deep tree layers, and cross-document `prerequ
 ## ISS-4 — Unified central learner ability record (self-supplied background, learning instructions, and engaged sources) + cell `Done` status toggle
 
 **Raised:** 2026-10-19
-**Status:** scheduled
-**Lands in:** phase 07
+**Status:** fixed 2026-10-27
+**Lands in:** phase 07 (fixed on main)
 
 Combine user self-supplied background (e.g., *"I did first year Nat Sci (Physical) at Cambridge."*), persistent learning/style instructions (e.g., *"I am a visual learner. Explain terms as they are introduced"*), and an automatic record of sources/cells engaged with into a single central learner ability record, backed by a per-cell **Done** check-off status on Concept Blocks (checked off visually in place without hiding the cell).
 

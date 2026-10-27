@@ -43,9 +43,9 @@ Updated: 2026-10-27
   - [x] epic-01-sqlite-store-and-readme — merged 2026-10-27
   - [x] epic-02-full-text-and-semantic-search — merged 2026-10-27
   - [x] epic-03-agent-topic-deduplication — merged 2026-10-27
-- [ ] 07-central-ability-record-and-cell-done — in progress
+- [x] 07-central-ability-record-and-cell-done — done
   - [x] epic-01-ability-record-and-done-api — merged 2026-10-27
-  - [ ] epic-02-ability-record-and-done-ui — pending
+  - [x] epic-02-ability-record-and-done-ui — merged 2026-10-27
 - [ ] 08-orbstack-caddy-auth-and-skill — pending
 
 ## Notes for a fresh session

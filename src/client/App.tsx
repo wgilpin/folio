@@ -338,6 +338,58 @@ export function App(): React.ReactElement {
     }
   };
 
+  const handleUpdateAbilityRecord = async (patch: {
+    background?: string;
+    learningInstructions?: string;
+  }) => {
+    setProfile((prev) => ({
+      ...prev,
+      ...patch,
+    }));
+
+    try {
+      const res = await fetch('/api/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { profile?: LearnerProfile };
+        if (data.profile) {
+          setProfile(data.profile);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleToggleBlockDone = async (blockId: string, nextDone: boolean) => {
+    setBlocks((prev) =>
+      prev.map((b) => (b.id === blockId ? { ...b, done: nextDone } : b))
+    );
+
+    try {
+      const res = await fetch(
+        `/api/blocks/${encodeURIComponent(blockId)}/done`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            done: nextDone,
+            docId: document?.id ?? 'index',
+          }),
+        }
+      );
+      if (res.ok) {
+        const data = (await res.json()) as DocApiResponse;
+        applyDocResponse(data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleSeedPrerequisite = async (topic: string) => {
     setSeedingPrerequisiteTopic(topic);
     if (documentRef.current?.id) {
@@ -838,6 +890,7 @@ export function App(): React.ReactElement {
         toc={toc}
         modelId={modelId}
         settings={settings}
+        profile={profile}
         workspaceDir={workspaceDir}
         workspaces={workspaces}
         collapsed={sidebarCollapsed}
@@ -849,6 +902,7 @@ export function App(): React.ReactElement {
         }
         onDeleteDocument={(docId) => void handleDeleteDocument(docId)}
         onUpdateSettings={(patch) => void handleUpdateSettings(patch)}
+        onUpdateAbilityRecord={(patch) => void handleUpdateAbilityRecord(patch)}
         onSwitchWorkspace={(dir) => void handleSwitchWorkspace(dir)}
       />
 
@@ -944,22 +998,44 @@ export function App(): React.ReactElement {
                   }}
                 >
                   <span>{document.filename}</span>
-                  <button
-                    type="button"
-                    aria-label="Delete current notebook"
-                    onClick={() => void handleDeleteDocument(document.id)}
+                  <div
                     style={{
-                      backgroundColor: 'transparent',
-                      color: '#B91C1C',
-                      border: '1px solid #FECACA',
-                      borderRadius: '4px',
-                      padding: '2px 8px',
-                      fontSize: '11px',
-                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
                     }}
                   >
-                    Delete Notebook
-                  </button>
+                    <span
+                      aria-label="Document completion progress"
+                      style={{
+                        backgroundColor: '#DCFCE7',
+                        color: '#15803D',
+                        border: '1px solid #86EFAC',
+                        borderRadius: '6px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {blocks.filter((b) => b.done).length}/{blocks.length} blocks done
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="Delete current notebook"
+                      onClick={() => void handleDeleteDocument(document.id)}
+                      style={{
+                        backgroundColor: 'transparent',
+                        color: '#B91C1C',
+                        border: '1px solid #FECACA',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Delete Notebook
+                    </button>
+                  </div>
                 </div>
                 <h1
                   style={{
@@ -1039,6 +1115,7 @@ export function App(): React.ReactElement {
                       onSplitBlock={handleSplitBlock}
                       onMergeBlock={handleMergeBlock}
                       onDeleteBlock={handleDeleteBlock}
+                      onToggleDone={handleToggleBlockDone}
                     />
                   );
                 })}
