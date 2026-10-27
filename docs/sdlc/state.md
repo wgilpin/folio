@@ -46,7 +46,9 @@ Updated: 2026-10-27
 - [x] 07-central-ability-record-and-cell-done — done
   - [x] epic-01-ability-record-and-done-api — merged 2026-10-27
   - [x] epic-02-ability-record-and-done-ui — merged 2026-10-27
-- [ ] 08-orbstack-caddy-auth-and-skill — pending
+- [ ] 08-orbstack-caddy-auth-and-skill — in progress
+  - [x] epic-01-spa-server-container-and-caddy — merged 2026-10-27
+  - [ ] epic-02-cross-mac-folio-skill — pending
 
 ## Notes for a fresh session
 

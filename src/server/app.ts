@@ -1,5 +1,5 @@
 import * as fs from 'node:fs/promises';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import {
   BranchResultSchema,
@@ -41,6 +41,8 @@ import { WorkspaceStore } from './store.js';
 export interface CreateAppOptions {
   workspaceDir: string;
   profilePath?: string;
+  clientDistDir?: string;
+  apiKey?: string;
   seedGenerator?: SeedGenerator;
   cellChatGenerator?: CellChatGenerator;
   integrateGenerator?: IntegrateGenerator;
@@ -50,6 +52,18 @@ export interface CreateAppOptions {
   documentBranchGenerator?: DocumentBranchGenerator;
   modelId?: string;
 }
+
+const STATIC_CONTENT_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+};
 
 const SeedRequestSchema = z.object({
   prompt: z.string().trim().min(1, 'Topic prompt is required'),
@@ -158,6 +172,79 @@ export function createApp(options: CreateAppOptions): Hono {
       knownWorkspaces.add(profile.workspaceDir);
     }
   };
+
+  const effectiveApiKey = (
+    options.apiKey ?? process.env.FOLIO_API_KEY
+  )?.trim();
+
+  app.get('/api/health', (c) => {
+    return c.json({ status: 'ok' });
+  });
+
+  app.use('/api/*', async (c, next) => {
+    if (c.req.path === '/api/health') {
+      return next();
+    }
+    if (!effectiveApiKey) {
+      return next();
+    }
+    const authHeader = c.req.header('Authorization');
+    const remoteUser = c.req.header('Remote-User');
+    if (
+      authHeader === `Bearer ${effectiveApiKey}` ||
+      Boolean(remoteUser?.trim())
+    ) {
+      return next();
+    }
+    return c.json({ error: 'Unauthorized' }, 401);
+  });
+
+  const handleGetDocMarkdown = async (
+    c: Context,
+    rawDocId?: string
+  ) => {
+    await ensureWorkspaceInitialized();
+    const loaded = await store.loadDocument(rawDocId);
+    if (!loaded.document) {
+      return c.json(
+        { error: `Document "${rawDocId ?? 'index'}" not found` },
+        404
+      );
+    }
+
+    const filePath = path.join(store.workspaceDir, loaded.document.filename);
+    let rawMarkdown: string;
+    try {
+      rawMarkdown = await fs.readFile(filePath, 'utf8');
+    } catch {
+      rawMarkdown = loaded.blocks.map((b) => b.markdown).join('\n\n');
+    }
+
+    const clean = c.req.query('clean') === 'true';
+    const markdown = clean
+      ? rawMarkdown
+          .replace(/<!--\s*folio:block\b[^>]*-->\r?\n?/g, '')
+          .trim()
+      : rawMarkdown;
+
+    return c.json({
+      docId: loaded.document.id,
+      title: loaded.document.title,
+      filename: loaded.document.filename,
+      markdown,
+      blocks: loaded.blocks,
+      doneCount: loaded.blocks.filter((b) => b.done).length,
+      totalBlocks: loaded.blocks.length,
+    });
+  };
+
+  app.get('/api/doc/markdown', (c) =>
+    handleGetDocMarkdown(c, c.req.query('id'))
+  );
+
+  app.get('/api/doc/:id/markdown', (c) =>
+    handleGetDocMarkdown(c, c.req.param('id'))
+  );
 
   app.get('/api/doc', async (c) => {
     await ensureWorkspaceInitialized();
@@ -1310,6 +1397,46 @@ export function createApp(options: CreateAppOptions): Hono {
       return c.json({ error: message }, status);
     }
   });
+
+  if (options.clientDistDir) {
+    const distRoot = path.resolve(options.clientDistDir);
+    app.get('*', async (c) => {
+      if (c.req.path === '/api' || c.req.path.startsWith('/api/')) {
+        return c.notFound();
+      }
+      const relPath =
+        c.req.path === '/' ? 'index.html' : c.req.path.replace(/^\/+/, '');
+      const candidatePath = path.resolve(distRoot, relPath);
+      if (
+        candidatePath.startsWith(distRoot + path.sep) ||
+        candidatePath === distRoot
+      ) {
+        try {
+          const stat = await fs.stat(candidatePath);
+          if (stat.isFile()) {
+            const ext = path.extname(candidatePath).toLowerCase();
+            const contentType =
+              STATIC_CONTENT_TYPES[ext] ?? 'application/octet-stream';
+            const body = await fs.readFile(candidatePath);
+            return new Response(body, {
+              status: 200,
+              headers: { 'Content-Type': contentType },
+            });
+          }
+        } catch {
+          // Fall through to SPA index.html fallback
+        }
+      }
+
+      const indexHtmlPath = path.join(distRoot, 'index.html');
+      try {
+        const html = await fs.readFile(indexHtmlPath, 'utf8');
+        return c.html(html);
+      } catch {
+        return c.notFound();
+      }
+    });
+  }
 
   return app;
 }

@@ -1,0 +1,24 @@
+services:
+  folio:
+    build: .
+    container_name: folio
+    restart: unless-stopped
+    ports:
+      - "4321:4321"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=4321
+      - FOLIO_WORKSPACE=/data/workspace
+      - FOLIO_API_KEY=${TELEOSIS_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    volumes:
+      - ./workspace:/data/workspace
+      - ${HOME}/.folio:/root/.folio
+    networks:
+      - web-routing
+
+networks:
+  web-routing:
+    external: true

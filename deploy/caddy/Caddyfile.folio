@@ -1,0 +1,21 @@
+# Reusable SSO + Bearer API-key bypass snippet for /Users/will/projects/caddy/Caddyfile
+(protected) {
+	@browser {
+		not header Authorization "Bearer {$TELEOSIS_API_KEY}"
+	}
+	forward_auth @browser tinyauth:3000 {
+		uri /api/auth/caddy
+		copy_headers Remote-User Remote-Email Remote-Name
+	}
+}
+
+http://folio.teleosis.ai {
+	import protected
+	reverse_proxy {
+		dynamic a {
+			name folio
+			port 4321
+			refresh 10s
+		}
+	}
+}

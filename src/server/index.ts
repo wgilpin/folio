@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { serve } from '@hono/node-server';
 import { createApp } from './app.js';
@@ -9,6 +10,7 @@ try {
   // .env is optional if environment variables are already set
 }
 
+const hostname = process.env.HOST ?? '127.0.0.1';
 const port = Number(process.env.PORT ?? 4321);
 const profile = await new LearnerProfileStore().loadProfile();
 const workspaceDir =
@@ -16,15 +18,27 @@ const workspaceDir =
   profile.workspaceDir ??
   path.resolve(process.cwd(), 'workspace');
 
-const app = createApp({ workspaceDir });
+const candidateDistDir =
+  process.env.FOLIO_CLIENT_DIST ?? path.resolve(process.cwd(), 'dist');
+const clientDistDir = fs.existsSync(path.join(candidateDistDir, 'index.html'))
+  ? candidateDistDir
+  : undefined;
+
+const app = createApp({
+  workspaceDir,
+  ...(clientDistDir ? { clientDistDir } : {}),
+  ...(process.env.FOLIO_API_KEY ? { apiKey: process.env.FOLIO_API_KEY } : {}),
+});
 
 serve(
   {
     fetch: app.fetch,
-    hostname: '127.0.0.1',
+    hostname,
     port,
   },
   (info) => {
-    console.log(`Folio server listening on http://127.0.0.1:${info.port}`);
+    console.log(
+      `Folio server listening on http://${hostname}:${info.port}`
+    );
   }
 );
