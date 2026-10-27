@@ -212,6 +212,25 @@ export function App(): React.ReactElement {
     }
   };
 
+  const handleSelectSearchResult = async (docId: string, blockId: string) => {
+    if (docId !== documentRef.current?.id) {
+      await handleSelectDocument(docId);
+    }
+    const scrollToBlock = () => {
+      const el = globalThis.document?.getElementById(`block-${blockId}`);
+      if (el) {
+        el.scrollIntoView?.({ behavior: 'smooth' });
+        return true;
+      }
+      return false;
+    };
+    if (!scrollToBlock()) {
+      setTimeout(() => {
+        scrollToBlock();
+      }, 0);
+    }
+  };
+
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
       if (documentRef.current?.id) {
@@ -825,6 +844,9 @@ export function App(): React.ReactElement {
         onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
         onOpenSeedModal={() => setIsSeedModalOpen(true)}
         onSelectDocument={(docId) => void handleSelectDocument(docId)}
+        onSelectSearchResult={(docId, blockId) =>
+          void handleSelectSearchResult(docId, blockId)
+        }
         onDeleteDocument={(docId) => void handleDeleteDocument(docId)}
         onUpdateSettings={(patch) => void handleUpdateSettings(patch)}
         onSwitchWorkspace={(dir) => void handleSwitchWorkspace(dir)}

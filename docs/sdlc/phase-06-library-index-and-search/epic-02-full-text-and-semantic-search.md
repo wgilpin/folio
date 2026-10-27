@@ -38,3 +38,61 @@ Every Concept Block saved in `.folio/library.sqlite` is indexed with its documen
 ## Notes
 
 - Provide a deterministic local feature-hashing / n-gram semantic vector embedder by default (with optional pluggable provider embeddings) so semantic and hybrid search work offline with zero latency and deterministic test behavior.
+
+---
+
+## Build note — 2026-10-27
+
+**Result:** green
+
+### Tasks done
+
+- Added `SearchModeSchema`, `SearchResultItemSchema`, and `SearchResponseSchema` to `src/shared/schema.ts`.
+- Added `blocks_fts` SQLite FTS5 virtual table and `blocks.embedding_json` synchronization in `src/server/db.ts`.
+- Created `src/server/search.ts` implementing SQLite FTS5 keyword + LaTeX tokenization, deterministic local semantic embedding vectors (`computeSemanticEmbedding`), cosine similarity ranking, and hybrid search (`searchWorkspaceLibrary`).
+- Added `GET /api/search` endpoint in `src/server/app.ts` supporting `hybrid`, `fts`, and `semantic` modes.
+- Added Library Search input (`aria-label="Search library"`) and interactive result cards in `src/client/components/SidebarTree.tsx`, and document switching + smooth block scrolling (`#block-<blockId>`) in `src/client/App.tsx`.
+
+### Tests added
+
+- `src/server/__tests__/search-api.test.ts` — `GET /api/search returns ranked FTS keyword/LaTeX and semantic Concept Block matches and reflects block updates and deletions`
+- `src/client/__tests__/SidebarSearch.test.tsx` — `searches library blocks from the sidebar, displays matching snippets, and navigates to the target document and block on click`
+
+### Suite result
+
+- `npm test`: `Test Files 21 passed (21), Tests 74 passed (74)`
+- `npm run typecheck`: `tsc --noEmit` (0 errors)
+
+### Deviations from the plan
+
+None
+
+### Follow-ups
+
+None
+
+---
+
+## Review — 2026-10-27
+
+**Verdict:** pass
+
+### Acceptance criteria
+
+| AC | Met | Proved by |
+|---|---|---|
+| AC-1 | yes | `src/server/__tests__/search-api.test.ts` — `GET /api/search returns ranked FTS keyword/LaTeX and semantic Concept Block matches and reflects block updates and deletions` |
+| AC-2 | yes | `src/server/__tests__/search-api.test.ts` — `GET /api/search returns ranked FTS keyword/LaTeX and semantic Concept Block matches and reflects block updates and deletions` |
+| AC-3 | yes | `src/client/__tests__/SidebarSearch.test.tsx` — `searches library blocks from the sidebar, displays matching snippets, and navigates to the target document and block on click` |
+
+### Drift
+
+None
+
+### Findings
+
+None
+
+### Follow-ups
+
+None
