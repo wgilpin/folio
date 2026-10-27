@@ -34,3 +34,11 @@ As the user builds many documents, deep tree layers, and cross-document `prerequ
 **Lands in:** phase 07
 
 Combine user self-supplied background (e.g., *"I did first year Nat Sci (Physical) at Cambridge."*), persistent learning/style instructions (e.g., *"I am a visual learner. Explain terms as they are introduced"*), and an automatic record of sources/cells engaged with into a single central learner ability record, backed by a per-cell **Done** check-off status on Concept Blocks (checked off visually in place without hiding the cell).
+
+## ISS-5 — Always-on OrbStack deployment (`folio.teleosis.ai`), Caddy central auth (`tinyauth` + bearer token bypass), and cross-Mac Folio Skill
+
+**Raised:** 2026-10-27
+**Status:** scheduled
+**Lands in:** phase 08
+
+Serve the compiled Vite SPA and `/api/*` from Hono in an always-on OrbStack container (`folio` on `web-routing` with persistent host volume mounts), gate `folio.teleosis.ai` (and other `*.teleosis.ai` apps) in `/Users/will/projects/caddy` via a reusable `(protected)` snippet (`tinyauth` browser SSO + `Authorization: Bearer $TELEOSIS_API_KEY` bypass), and provide a Folio Skill so LLM sessions on any Mac can query the Learner Ability Record, search Concept Blocks, and read documents.

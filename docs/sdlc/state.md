@@ -1,7 +1,7 @@
 # SDLC state
 
 Project: folio
-Updated: 2026-10-19
+Updated: 2026-10-27
 
 ## Stack
 
@@ -41,6 +41,7 @@ Updated: 2026-10-19
   - [x] epic-02-prerequisite-chips-ui — merged 2026-10-18
 - [ ] 06-library-index-and-search — pending
 - [ ] 07-central-ability-record-and-cell-done — pending
+- [ ] 08-orbstack-caddy-auth-and-skill — pending
 
 ## Notes for a fresh session
 
@@ -48,3 +49,4 @@ Updated: 2026-10-19
 - Phase 05 covers the global Learner Profile (`~/.folio/profile.json` across workspaces) and interactive Block 0 Prerequisite Chips (`↳ Seed Prerequisite` + `✓ I know this`).
 - Phase 06 covers migrating `.folio/notebook.json` to `.folio/library.sqlite`, the auto-generated `README.md` hierarchical library index for external readers, full-text and semantic search across Concept Blocks, and agent pre-flight deduplication/cross-linking.
 - Phase 07 covers the unified central Learner Ability Record (combining self-supplied background, standing learning instructions, and engaged sources/topics) and a non-hiding **Done** check-off status on Concept Blocks.
+- Phase 08 covers deploying Folio as an always-on OrbStack container (`folio.teleosis.ai` on `web-routing`) behind central Caddy `forward_auth` (`tinyauth` browser SSO + `Authorization: Bearer $TELEOSIS_API_KEY` programmatic bypass in `/Users/will/projects/caddy`) and shipping a cross-Mac Folio Skill for external LLM chat sessions.

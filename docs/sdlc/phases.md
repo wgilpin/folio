@@ -74,3 +74,14 @@ Issue ISS-4: Unified central learner ability record (self-supplied background, l
 **Not in this phase:** Cloud sync, multi-user accounts, persistent chat histories, or code execution kernels.
 
 **Depends on:** Phase 01, Phase 02, Phase 03, Phase 04, Phase 05, Phase 06
+
+## Phase 08 — OrbStack Deployment (`folio.teleosis.ai`), Central Caddy Auth & Cross-Mac Folio Skill
+
+**Goal:** Package Folio as an always-on OrbStack container (`folio` on `web-routing`, port `4321`) where Hono serves both the compiled Vite SPA (`dist/`) and `/api/*` backed by persistent host volume mounts, add central `tinyauth` SSO + `Authorization: Bearer $TELEOSIS_API_KEY` bypass in `/Users/will/projects/caddy` (`(protected)` snippet + `http://folio.teleosis.ai`), and provide a Folio Skill so any LLM chat session across Macs can query the Learner Ability Record, search Concept Blocks, and fetch Markdown documents.
+Issue ISS-5: Always-on OrbStack deployment (`folio.teleosis.ai`), Caddy central auth (`tinyauth` + bearer token bypass), and cross-Mac Folio Skill.
+
+**Works after this phase:** You can open `https://folio.teleosis.ai` (or a macOS Dock PWA) on any of your Macs with single sign-on across `*.teleosis.ai` via `tinyauth`, and any LLM chat session on your Macs can use the Folio Skill with `TELEOSIS_API_KEY` to read your Learner Ability Record, search your library, and retrieve documents as Markdown.
+
+**Not in this phase:** Multi-tenant user accounts, persistent inline chat histories, or code execution kernels.
+
+**Depends on:** Phase 01, Phase 02, Phase 03, Phase 04, Phase 05, Phase 06, Phase 07
