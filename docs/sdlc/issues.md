@@ -38,7 +38,7 @@ Combine user self-supplied background (e.g., *"I did first year Nat Sci (Physica
 ## ISS-5 — Always-on OrbStack deployment (`folio.teleosis.ai`), Caddy central auth (`tinyauth` + bearer token bypass), and cross-Mac Folio Skill
 
 **Raised:** 2026-10-27
-**Status:** scheduled
-**Lands in:** phase 08
+**Status:** fixed 2026-10-27
+**Lands in:** phase 08 (fixed on main)
 
 Serve the compiled Vite SPA and `/api/*` from Hono in an always-on OrbStack container (`folio` on `web-routing` with persistent host volume mounts), gate `folio.teleosis.ai` (and other `*.teleosis.ai` apps) in `/Users/will/projects/caddy` via a reusable `(protected)` snippet (`tinyauth` browser SSO + `Authorization: Bearer $TELEOSIS_API_KEY` bypass), and provide a Folio Skill so LLM sessions on any Mac can query the Learner Ability Record, search Concept Blocks, and read documents.
