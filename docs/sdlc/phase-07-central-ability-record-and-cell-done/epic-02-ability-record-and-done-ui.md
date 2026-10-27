@@ -32,3 +32,49 @@ Every `ConceptBlockCard` renders a **`Done`** check-off toggle button in its act
 ## Notes
 
 - Use the design tokens from `docs/sdlc/design.md` (`#15803D` on `#DCFCE7` for completed badge/button accents, `#FAF8F5` / `#FFFFFF` surfaces, `#E4DFD7` borders).
+
+## Build note — 2026-10-27
+
+### Tasks done
+
+- Added `onToggleDone` prop, `data-done` attribute, and non-hiding `Done` check-off toggle button (`aria-label="Mark block <id> as done"` / `aria-label="Unmark block <id> as done"`, `aria-pressed`) in `src/client/components/ConceptBlockCard.tsx` while keeping all Markdown prose visible in place.
+- Added the **Learner Ability Record** section in `src/client/components/SidebarTree.tsx` with `Learner Background` (`aria-label="Learner Background"`), `Standing Learning Instructions` (`aria-label="Standing Learning Instructions"`), `Save Ability Record` (`aria-label="Save learner ability record"`), and an engaged sources summary list (`<done>/<total> blocks done`).
+- Wired `handleToggleBlockDone` (`PUT /api/blocks/:id/done`), the document completion progress badge (`<done>/<total> blocks done`, `aria-label="Document completion progress"`), and `handleUpdateAbilityRecord` (`PUT /api/profile`) in `src/client/App.tsx`.
+- Added automated UI tests covering AC-1 and AC-2 in `src/client/__tests__/AbilityRecordAndCellDone.test.tsx`.
+
+### Tests added
+
+- `src/client/__tests__/AbilityRecordAndCellDone.test.tsx` — `toggles ConceptBlockCard Done status in place without hiding content and updates the document progress badge`
+- `src/client/__tests__/AbilityRecordAndCellDone.test.tsx` — `edits and saves Learner Background and Standing Learning Instructions via PUT /api/profile and displays engaged sources`
+
+### Suite result
+
+- Command: `npm test`
+- Result: `Test Files 24 passed (24), Tests 81 passed (81)`
+- Typecheck: `npm run typecheck` (`tsc --noEmit`, exit code 0)
+
+### Deviations from the plan
+
+- None.
+
+### Follow-ups
+
+- None.
+
+## Review — 2026-10-27
+
+**Verdict:** pass
+
+| Criterion | Met | Test | Notes |
+|---|---|---|---|
+| AC-1 | yes | `src/client/__tests__/AbilityRecordAndCellDone.test.tsx` — `toggles ConceptBlockCard Done status in place without hiding content and updates the document progress badge` | |
+| AC-2 | yes | `src/client/__tests__/AbilityRecordAndCellDone.test.tsx` — `edits and saves Learner Background and Standing Learning Instructions via PUT /api/profile and displays engaged sources` | |
+
+### Drift
+
+None
+
+### Findings
+
+None
+

@@ -196,6 +196,7 @@ export interface ConceptBlockCardProps {
   onSplitBlock?: (blockId: string) => Promise<void> | void;
   onMergeBlock?: (blockId: string) => Promise<void> | void;
   onDeleteBlock?: (blockId: string) => Promise<void> | void;
+  onToggleDone?: (blockId: string, nextDone: boolean) => Promise<void> | void;
   onAcceptEdit?: (editId: string) => Promise<void> | void;
   onRejectEdit?: (editId: string) => Promise<void> | void;
 }
@@ -306,6 +307,7 @@ export function ConceptBlockCard({
   onSplitBlock,
   onMergeBlock,
   onDeleteBlock,
+  onToggleDone,
   onAcceptEdit,
   onRejectEdit,
 }: ConceptBlockCardProps): React.ReactElement {
@@ -469,6 +471,7 @@ export function ConceptBlockCard({
     <article
       id={`block-${block.id}`}
       data-testid={`concept-block-${block.id}`}
+      data-done={block.done ? 'true' : 'false'}
       style={{
         backgroundColor: '#FFFFFF',
         border: cardBorder,
@@ -866,6 +869,28 @@ export function ConceptBlockCard({
           borderTop: '1px solid #F3EFEA',
         }}
       >
+        <span style={{ marginRight: 'auto', display: 'inline-flex' }}>
+          <button
+            type="button"
+            aria-label={
+              block.done
+                ? `Unmark block ${block.id} as done`
+                : `Mark block ${block.id} as done`
+            }
+            aria-pressed={Boolean(block.done)}
+            onClick={() => void onToggleDone?.(block.id, !block.done)}
+            style={{
+              ...actionBtnStyle,
+              backgroundColor: block.done ? '#DCFCE7' : '#FAF8F5',
+              color: block.done ? '#15803D' : '#65635E',
+              borderColor: block.done ? '#86EFAC' : '#E4DFD7',
+              fontWeight: block.done ? 600 : 500,
+            }}
+          >
+            {block.done ? '✓ Done' : '○ Done'}
+          </button>
+        </span>
+
         <button
           type="button"
           aria-label={`Edit Markdown for ${block.id}`}

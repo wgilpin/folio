@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   getConciseTitle,
   type DocumentNode,
+  type LearnerProfile,
   type NotebookSettings,
   type PedagogicalProfileId,
   type ReasoningEffort,
@@ -15,6 +16,7 @@ export interface SidebarTreeProps {
   toc: TocItem[];
   modelId: string;
   settings?: NotebookSettings;
+  profile?: LearnerProfile;
   workspaceDir?: string;
   workspaces?: string[];
   collapsed: boolean;
@@ -24,6 +26,10 @@ export interface SidebarTreeProps {
   onSelectSearchResult?: (docId: string, blockId: string) => Promise<void> | void;
   onDeleteDocument?: (docId: string) => Promise<void> | void;
   onUpdateSettings?: (patch: Partial<NotebookSettings>) => Promise<void> | void;
+  onUpdateAbilityRecord?: (patch: {
+    background?: string;
+    learningInstructions?: string;
+  }) => Promise<void> | void;
   onSwitchWorkspace?: (workspaceDir: string) => Promise<void> | void;
 }
 
@@ -39,6 +45,7 @@ export function SidebarTree({
   toc,
   modelId,
   settings,
+  profile,
   workspaceDir = '',
   workspaces = [],
   collapsed,
@@ -48,6 +55,7 @@ export function SidebarTree({
   onSelectSearchResult,
   onDeleteDocument,
   onUpdateSettings,
+  onUpdateAbilityRecord,
   onSwitchWorkspace,
 }: SidebarTreeProps): React.ReactElement {
   const effectiveModelId = settings?.modelId ?? modelId;
@@ -56,15 +64,32 @@ export function SidebarTree({
   const effectiveProfileId: PedagogicalProfileId =
     settings?.activeProfileId ?? 'intuitive-physical';
   const effectiveCustomPrompt = settings?.customSystemPrompt ?? '';
+  const effectiveBackground = profile?.background ?? '';
+  const effectiveLearningInstructions = profile?.learningInstructions ?? '';
+  const engagedSources = profile?.engagedSources ?? [];
 
   const [workspaceInput, setWorkspaceInput] = useState<string>(workspaceDir);
   const [customPromptDraft, setCustomPromptDraft] =
     useState<string>(effectiveCustomPrompt);
+  const [backgroundDraft, setBackgroundDraft] =
+    useState<string>(effectiveBackground);
+  const [learningInstructionsDraft, setLearningInstructionsDraft] =
+    useState<string>(effectiveLearningInstructions);
+  const [isAbilityRecordDirty, setIsAbilityRecordDirty] =
+    useState<boolean>(false);
   const [collapsedDocIds, setCollapsedDocIds] = useState<Record<string, boolean>>(
     {}
   );
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
+
+  useEffect(() => {
+    setBackgroundDraft(effectiveBackground);
+  }, [effectiveBackground]);
+
+  useEffect(() => {
+    setLearningInstructionsDraft(effectiveLearningInstructions);
+  }, [effectiveLearningInstructions]);
 
   useEffect(() => {
     const trimmed = searchQuery.trim();
@@ -744,6 +769,186 @@ export function SidebarTree({
             </button>
           </div>
         )}
+
+        <div
+          style={{
+            borderTop: '1px solid #E4DFD7',
+            paddingTop: '12px',
+            marginTop: '4px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          <div
+            style={{
+              fontSize: '12px',
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              color: '#65635E',
+            }}
+          >
+            Learner Ability Record
+          </div>
+          <div>
+            <label
+              htmlFor="sidebar-learner-background"
+              style={{
+                display: 'block',
+                fontSize: '12px',
+                color: '#65635E',
+                marginBottom: '4px',
+              }}
+            >
+              Learner Background
+            </label>
+            <textarea
+              id="sidebar-learner-background"
+              aria-label="Learner Background"
+              value={backgroundDraft}
+              onFocus={() => setIsAbilityRecordDirty(true)}
+              onChange={(e) => {
+                setBackgroundDraft(e.target.value);
+                setIsAbilityRecordDirty(true);
+              }}
+              rows={2}
+              placeholder="e.g. First year Nat Sci (Physical) at Cambridge."
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                fontSize: '12px',
+                color: '#18181B',
+                backgroundColor: '#FFFFFF',
+                border: '1px solid #E4DFD7',
+                borderRadius: '6px',
+                padding: '6px 8px',
+                fontFamily: "'Inter', system-ui, sans-serif",
+                resize: 'vertical',
+              }}
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="sidebar-standing-learning-instructions"
+              style={{
+                display: 'block',
+                fontSize: '12px',
+                color: '#65635E',
+                marginBottom: '4px',
+              }}
+            >
+              Standing Learning Instructions
+            </label>
+            <textarea
+              id="sidebar-standing-learning-instructions"
+              aria-label="Standing Learning Instructions"
+              value={learningInstructionsDraft}
+              onFocus={() => setIsAbilityRecordDirty(true)}
+              onChange={(e) => {
+                setLearningInstructionsDraft(e.target.value);
+                setIsAbilityRecordDirty(true);
+              }}
+              rows={2}
+              placeholder="e.g. I am a visual learner. Explain terms as they are introduced."
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                fontSize: '12px',
+                color: '#18181B',
+                backgroundColor: '#FFFFFF',
+                border: '1px solid #E4DFD7',
+                borderRadius: '6px',
+                padding: '6px 8px',
+                fontFamily: "'Inter', system-ui, sans-serif",
+                resize: 'vertical',
+              }}
+            />
+          </div>
+          {(isAbilityRecordDirty ||
+            backgroundDraft !== effectiveBackground ||
+            learningInstructionsDraft !== effectiveLearningInstructions) && (
+            <button
+              type="button"
+              aria-label="Save learner ability record"
+              onClick={() =>
+                void onUpdateAbilityRecord?.({
+                  background: backgroundDraft,
+                  learningInstructions: learningInstructionsDraft,
+                })
+              }
+              style={{
+                backgroundColor: '#1D4ED8',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '6px 8px',
+                fontSize: '12px',
+                cursor: 'pointer',
+              }}
+            >
+              Save Ability Record
+            </button>
+          )}
+
+          {engagedSources.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px',
+                marginTop: '4px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: '#65635E',
+                }}
+              >
+                Engaged Sources
+              </div>
+              {engagedSources.map((source) => (
+                <div
+                  key={`${source.workspaceDir ?? ''}-${source.docId}`}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '11px',
+                    padding: '4px 6px',
+                    backgroundColor: '#FFFFFF',
+                    border: '1px solid #E4DFD7',
+                    borderRadius: '6px',
+                    color: '#18181B',
+                  }}
+                >
+                  <span
+                    style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={source.docTitle}
+                  >
+                    {source.docTitle}
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: "'JetBrains Mono', monospace",
+                      color: '#15803D',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {source.completedBlockIds.length}/{source.totalBlocks} blocks done
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </footer>
     </nav>
   );
