@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../app.js';
+import { WorkspaceStore } from '../store.js';
 
 describe('Learner Profile & Prerequisite Seeding API (Phase 05 Epic 01)', () => {
   let tempDirA: string;
@@ -180,10 +181,8 @@ describe('Learner Profile & Prerequisite Seeding API (Phase 05 Epic 01)', () => 
       'Multivariable Calculus',
     ]);
 
-    // Check .folio/notebook.json sidecar persists prerequisites on both documents
-    const sidecar = JSON.parse(
-      await fs.readFile(path.join(tempDirA, '.folio', 'notebook.json'), 'utf-8')
-    );
+    // Check WorkspaceStore sidecar persists prerequisites on both documents
+    const sidecar = await new WorkspaceStore(tempDirA).loadState();
     expect(sidecar.documents['hamiltonian-mechanics'].prerequisites).toEqual([
       'Lagrangian Mechanics',
       'Vector Calculus',

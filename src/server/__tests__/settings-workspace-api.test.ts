@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../app.js';
 import { PEDAGOGICAL_PROFILES } from '../llm.js';
+import { WorkspaceStore } from '../store.js';
 
 describe('BYOM Settings & Workspace Switcher API (Epic 01)', () => {
   let workspaceA: string;
@@ -119,9 +120,7 @@ describe('BYOM Settings & Workspace Switcher API (Epic 01)', () => {
       customSystemPrompt: 'Always use tensor index notation.',
     });
 
-    const sidecarRaw = JSON.parse(
-      await fs.readFile(path.join(workspaceA, '.folio', 'notebook.json'), 'utf-8')
-    );
+    const sidecarRaw = await new WorkspaceStore(workspaceA).loadState();
     expect(sidecarRaw.settings).toEqual({
       modelId: 'openai:o3',
       reasoningEffort: 'high',

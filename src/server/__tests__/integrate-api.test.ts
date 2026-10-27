@@ -163,10 +163,8 @@ describe('Multi-Cell Integrate & Synchronous Diff Resolution Gate API', () => {
       },
     ]);
 
-    // Verify .folio/notebook.json persisted cleared activeChat and staged pendingEdits
-    const sidecarRaw = JSON.parse(
-      await fs.readFile(path.join(tempDir, '.folio', 'notebook.json'), 'utf-8')
-    );
+    // Verify store persisted cleared activeChat and staged pendingEdits
+    const sidecarRaw = await store.loadState();
     expect(sidecarRaw.activeChat).toBeNull();
     expect(sidecarRaw.pendingEdits).toEqual(intBody.pendingEdits);
 
