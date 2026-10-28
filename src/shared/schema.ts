@@ -43,6 +43,40 @@ export const LearnerProfileSchema = z.object({
 
 export type LearnerProfile = z.infer<typeof LearnerProfileSchema>;
 
+export const SourceAttachmentKindSchema = z.enum(['pdf', 'markdown', 'paste']);
+
+export type SourceAttachmentKind = z.infer<typeof SourceAttachmentKindSchema>;
+
+export const SourceAttachmentMediaTypeSchema = z.enum([
+  'application/pdf',
+  'text/markdown',
+  'text/plain',
+]);
+
+export type SourceAttachmentMediaType = z.infer<
+  typeof SourceAttachmentMediaTypeSchema
+>;
+
+export const SourceAttachmentSchema = z.object({
+  filename: z.string(),
+  mediaType: SourceAttachmentMediaTypeSchema,
+  kind: SourceAttachmentKindSchema,
+  byteSize: z.number().int().nonnegative(),
+  createdAt: z.string(),
+});
+
+export type SourceAttachment = z.infer<typeof SourceAttachmentSchema>;
+
+export const SeedSourceInputSchema = z.object({
+  filename: z.string().trim().min(1),
+  mediaType: SourceAttachmentMediaTypeSchema,
+  kind: SourceAttachmentKindSchema.optional(),
+  content: z.string().min(1),
+  encoding: z.enum(['utf-8', 'base64']).default('utf-8'),
+});
+
+export type SeedSourceInput = z.infer<typeof SeedSourceInputSchema>;
+
 export const DocumentNodeSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -53,6 +87,7 @@ export const DocumentNodeSchema = z.object({
   childDocIds: z.array(z.string()),
   prerequisites: z.array(z.string()).optional(),
   prerequisiteDocIds: z.record(z.string(), z.string()).optional(),
+  sourceAttachment: SourceAttachmentSchema.optional(),
 });
 
 export type DocumentNode = z.infer<typeof DocumentNodeSchema>;

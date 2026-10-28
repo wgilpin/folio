@@ -42,3 +42,11 @@ Combine user self-supplied background (e.g., *"I did first year Nat Sci (Physica
 **Lands in:** phase 08 (fixed on main)
 
 Serve the compiled Vite SPA and `/api/*` from Hono in an always-on OrbStack container (`folio` on `web-routing` with persistent host volume mounts), gate `folio.teleosis.ai` (and other `*.teleosis.ai` apps) in `/Users/will/projects/caddy` via a reusable `(protected)` snippet (`tinyauth` browser SSO + `Authorization: Bearer $TELEOSIS_API_KEY` bypass), and provide a Folio Skill so LLM sessions on any Mac can query the Learner Ability Record, search Concept Blocks, and read documents.
+
+## ISS-6 — Remove or hide vestigial `Root Folder` (`/data/workspace`) switcher in the Notebook Sidebar
+
+**Raised:** 2026-10-28
+**Status:** scheduled
+**Lands in:** phase 09
+
+`SidebarTree.tsx` renders a `ROOT FOLDER` (`/data/workspace`) text input and `Switch Workspace` button at the top of the sidebar, which is vestigial now that all notebooks live in a single unified library inside the OrbStack container.

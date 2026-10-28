@@ -9,6 +9,7 @@ import {
   ReasoningEffortSchema,
   SearchModeSchema,
   SeedResultSchema,
+  SeedSourceInputSchema,
   TopicFamiliaritySchema,
   type ChatMessage,
 } from '../shared/schema.js';
@@ -66,7 +67,8 @@ const STATIC_CONTENT_TYPES: Record<string, string> = {
 };
 
 const SeedRequestSchema = z.object({
-  prompt: z.string().trim().min(1, 'Topic prompt is required'),
+  prompt: z.string().optional().default(''),
+  source: SeedSourceInputSchema.optional(),
 });
 
 const UpdateBlockRequestSchema = z.object({
@@ -174,7 +176,8 @@ export function createApp(options: CreateAppOptions): Hono {
   };
 
   const effectiveApiKey = (
-    options.apiKey ?? process.env.FOLIO_API_KEY
+    options.apiKey ??
+    (process.env.VITEST ? undefined : process.env.FOLIO_API_KEY)
   )?.trim();
 
   app.get('/api/health', (c) => {
@@ -244,6 +247,43 @@ export function createApp(options: CreateAppOptions): Hono {
 
   app.get('/api/doc/:id/markdown', (c) =>
     handleGetDocMarkdown(c, c.req.param('id'))
+  );
+
+  const handleGetDocSource = async (c: Context, rawDocId?: string) => {
+    await ensureWorkspaceInitialized();
+    const sourceData = await store.readSourceAttachment(rawDocId);
+    if (!sourceData) {
+      return c.json(
+        {
+          error: `Source attachment for document "${rawDocId ?? 'index'}" not found`,
+        },
+        404
+      );
+    }
+
+    const { attachment, buffer } = sourceData;
+    const contentType =
+      attachment.mediaType === 'application/pdf'
+        ? 'application/pdf'
+        : `${attachment.mediaType}; charset=utf-8`;
+    const safeDispositionFilename = attachment.filename.replace(/["\\]/g, '_');
+
+    return new Response(new Uint8Array(buffer), {
+      status: 200,
+      headers: {
+        'Content-Type': contentType,
+        'Content-Disposition': `inline; filename="${safeDispositionFilename}"`,
+        'Content-Length': String(buffer.byteLength),
+      },
+    });
+  };
+
+  app.get('/api/doc/source', (c) =>
+    handleGetDocSource(c, c.req.query('id'))
+  );
+
+  app.get('/api/doc/:id/source', (c) =>
+    handleGetDocSource(c, c.req.param('id'))
   );
 
   app.get('/api/doc', async (c) => {
@@ -526,38 +566,53 @@ export function createApp(options: CreateAppOptions): Hono {
 
     const parsedReq = SeedRequestSchema.safeParse(rawBody);
     if (!parsedReq.success) {
-      return c.json({ error: 'Topic prompt is required' }, 400);
+      return c.json(
+        { error: 'Topic prompt or source material is required' },
+        400
+      );
+    }
+
+    const cleanPrompt = parsedReq.data.prompt.trim();
+    const source = parsedReq.data.source;
+    if (!cleanPrompt && !source) {
+      return c.json(
+        { error: 'Topic prompt or source material is required' },
+        400
+      );
     }
 
     try {
       const settings = await store.getSettings(getDefaultModelId());
       const profile = await profileStore.loadProfile();
 
-      const existing = await store.findExistingRootOrLibraryDocumentByPrompt(
-        parsedReq.data.prompt
-      );
-      if (existing && existing.document) {
-        return c.json({
-          document: existing.document,
-          blocks: existing.blocks,
-          toc: existing.toc,
-          documents: existing.documents,
-          activeChat: existing.activeChat,
-          pendingEdits: existing.pendingEdits,
-          settings,
-          workspaceDir: store.workspaceDir,
-          workspaces: Array.from(knownWorkspaces),
-          profile,
-          modelId: settings.modelId,
-        });
+      if (!source && cleanPrompt) {
+        const existing = await store.findExistingRootOrLibraryDocumentByPrompt(
+          cleanPrompt
+        );
+        if (existing && existing.document) {
+          return c.json({
+            document: existing.document,
+            blocks: existing.blocks,
+            toc: existing.toc,
+            documents: existing.documents,
+            activeChat: existing.activeChat,
+            pendingEdits: existing.pendingEdits,
+            settings,
+            workspaceDir: store.workspaceDir,
+            workspaces: Array.from(knownWorkspaces),
+            profile,
+            modelId: settings.modelId,
+          });
+        }
       }
 
-      const relatedLibraryDocs = await store.findRelatedLibraryDocs(
-        parsedReq.data.prompt
-      );
+      const relatedQuery = cleanPrompt || source?.filename || '';
+      const relatedLibraryDocs = relatedQuery
+        ? await store.findRelatedLibraryDocs(relatedQuery)
+        : [];
 
       const seedResult = SeedResultSchema.parse(
-        await seedGenerator(parsedReq.data.prompt, {
+        await seedGenerator(cleanPrompt, {
           modelId: settings.modelId,
           reasoningEffort: settings.reasoningEffort,
           pedagogicalPrompt: resolvePedagogicalPrompt(settings),
@@ -565,10 +620,11 @@ export function createApp(options: CreateAppOptions): Hono {
             ? { learnerProfile: profile }
             : {}),
           ...(relatedLibraryDocs.length > 0 ? { relatedLibraryDocs } : {}),
+          ...(source ? { source } : {}),
         })
       );
 
-      const saved = await store.seedRootDocument(seedResult);
+      const saved = await store.seedRootDocument(seedResult, source);
 
       return c.json({
         document: saved.document,
