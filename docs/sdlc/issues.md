@@ -46,7 +46,7 @@ Serve the compiled Vite SPA and `/api/*` from Hono in an always-on OrbStack cont
 ## ISS-6 — Remove or hide vestigial `Root Folder` (`/data/workspace`) switcher in the Notebook Sidebar
 
 **Raised:** 2026-10-28
-**Status:** scheduled
-**Lands in:** phase 09
+**Status:** fixed 2026-10-28
+**Lands in:** phase 09 (fixed on main)
 
 `SidebarTree.tsx` renders a `ROOT FOLDER` (`/data/workspace`) text input and `Switch Workspace` button at the top of the sidebar, which is vestigial now that all notebooks live in a single unified library inside the OrbStack container.

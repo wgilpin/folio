@@ -40,3 +40,33 @@
 
 - Faithful verbatim document chunking/reader mode without LLM synthesis.
 - Cleaning up or editing the saved raw attachment inside Folio.
+
+## Build note — 2026-10-28
+
+- **Tasks done:**
+  - Updated `SeedModal` (`src/client/components/SeedModal.tsx`) to accept `onSeed: (prompt: string, source?: SeedSourceInput) => Promise<void>`, added file upload (`aria-label="Upload source file"`, `Attach .pdf or .md` button, and drag-and-drop support) reading `.pdf` as `base64` (`application/pdf`, `kind: 'pdf'`) and `.md`/`.txt` as `utf-8` (`text/markdown` or `text/plain`, `kind: 'markdown'`), added multi-line paste auto-promotion on `#seed-topic-input` (`pasted-source.txt`, `text/plain`, `kind: 'paste'`), rendered the source attachment pill (`data-testid="seed-source-attachment"`) with `Remove source` (`aria-label="Remove source attachment"`), and enabled submitting with or without a steering prompt when `source` is attached.
+  - Updated `App` (`src/client/App.tsx`) so `handleSeed` forwards `{ prompt, ...(source ? { source } : {}) }` to `POST /api/doc/seed` and the active document header renders `<a data-testid="document-source-link" href="/api/doc/<docId>/source" target="_blank" rel="noopener noreferrer">Source: <filename></a>` whenever `document.sourceAttachment` is present.
+  - Removed the vestigial `Root Folder` section (`Workspace directory path` input and `Switch Workspace` button) from `SidebarTree` (`src/client/components/SidebarTree.tsx`) and marked `ISS-6` as `fixed 2026-10-28` in `docs/sdlc/issues.md`.
+- **Tests added / updated:**
+  - `src/client/__tests__/SeedFromSource.test.tsx` (2 tests covering AC-1: multi-line chat paste promotion, PDF file upload with steering prompt, Markdown file upload with empty steering prompt, and `Source: <filename>` header link rendering)
+  - `src/client/__tests__/SidebarControls.test.tsx` (updated test covering AC-2: verifies `Root Folder` / `Workspace directory path` / `Switch workspace` are absent while all core sidebar controls remain present)
+- **Suite result:** 28 test files passed, 88 tests passed (`npm test -- --run`).
+- **Deviations from plan:** None.
+
+## Review — 2026-10-28
+
+**Verdict:** pass
+
+| Criterion | Met | Test | Notes |
+|---|---|---|---|
+| AC-1 | yes | `src/client/__tests__/SeedFromSource.test.tsx` — `seeds a document from an uploaded file or pasted source text with optional steering prompt and renders viewable Source attachment link in document header` | |
+| AC-2 | yes | `src/client/__tests__/SidebarControls.test.tsx` — `does not render the vestigial Root Folder input or Switch Workspace button in SidebarTree` | |
+
+### Drift
+
+None
+
+### Findings
+
+None
+

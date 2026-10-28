@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   getConciseTitle,
   type DocumentNode,
   type NotebookSettings,
   type PedagogicalProfileId,
+  type SeedSourceInput,
 } from '../../shared/schema.js';
 
 const SEARCH_STOP_WORDS = new Set([
@@ -86,10 +87,66 @@ function findMatchingDocuments(
   return scored.map((item) => item.doc);
 }
 
+async function readFileBytes(file: File): Promise<Uint8Array> {
+  if (typeof file.arrayBuffer === 'function') {
+    const ab = await file.arrayBuffer();
+    return new Uint8Array(ab);
+  }
+  return await new Promise<Uint8Array>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (reader.result instanceof ArrayBuffer) {
+        resolve(new Uint8Array(reader.result));
+      } else {
+        reject(new Error('Failed to read file bytes'));
+      }
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(bytes).toString('base64');
+  }
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]!);
+  }
+  return btoa(binary);
+}
+
+async function readFileAsSeedSource(file: File): Promise<SeedSourceInput> {
+  const bytes = await readFileBytes(file);
+  const isPdf =
+    file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  if (isPdf) {
+    return {
+      filename: file.name,
+      mediaType: 'application/pdf',
+      kind: 'pdf',
+      content: bytesToBase64(bytes),
+      encoding: 'base64',
+    };
+  }
+
+  const isMarkdown =
+    file.type === 'text/markdown' || /\.(md|markdown)$/i.test(file.name);
+  const textContent = new TextDecoder('utf-8').decode(bytes);
+  return {
+    filename: file.name,
+    mediaType: isMarkdown ? 'text/markdown' : 'text/plain',
+    kind: 'markdown',
+    content: textContent,
+    encoding: 'utf-8',
+  };
+}
+
 export interface SeedModalProps {
   isSubmitting: boolean;
   error: string | null;
-  onSeed: (prompt: string) => Promise<void>;
+  onSeed: (prompt: string, source?: SeedSourceInput) => Promise<void>;
   documents?: Record<string, DocumentNode>;
   onSelectDocument?: (docId: string) => void;
   onDeleteDocument?: (docId: string) => Promise<void> | void;
@@ -112,6 +169,8 @@ export function SeedModal({
   mode = 'inline',
 }: SeedModalProps): React.ReactElement {
   const [prompt, setPrompt] = useState('');
+  const [source, setSource] = useState<SeedSourceInput | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const effectiveProfileId: PedagogicalProfileId =
     settings?.activeProfileId ?? 'intuitive-physical';
   const effectiveCustomPrompt = settings?.customSystemPrompt ?? '';
@@ -128,10 +187,54 @@ export function SeedModal({
     [documents, prompt]
   );
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (!selectedFile) {
+      return;
+    }
+    void readFileAsSeedSource(selectedFile).then((parsed) => {
+      setSource(parsed);
+    });
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pastedText =
+      e.clipboardData?.getData('text/plain') ||
+      e.clipboardData?.getData('text') ||
+      '';
+    if (pastedText.includes('\n')) {
+      e.preventDefault();
+      setSource({
+        filename: 'pasted-source.txt',
+        mediaType: 'text/plain',
+        kind: 'paste',
+        content: pastedText,
+        encoding: 'utf-8',
+      });
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const droppedFile = e.dataTransfer?.files?.[0];
+    if (droppedFile) {
+      void readFileAsSeedSource(droppedFile).then((parsed) => {
+        setSource(parsed);
+      });
+    }
+  };
+
+  const handleRemoveSource = () => {
+    setSource(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = prompt.trim();
-    if (!trimmed || isSubmitting) {
+    if ((!trimmed && !source) || isSubmitting) {
       return;
     }
     if (
@@ -144,11 +247,13 @@ export function SeedModal({
         customSystemPrompt: customPromptDraft,
       });
     }
-    await onSeed(trimmed);
+    await onSeed(trimmed, source ?? undefined);
   };
 
   const card = (
     <div
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={handleDrop}
       style={{
         backgroundColor: '#FFFFFF',
         border: '1px solid #E4DFD7',
@@ -180,7 +285,7 @@ export function SeedModal({
           lineHeight: 1.5,
         }}
       >
-        Enter a topic to generate 4–8 initial Concept Blocks, or search existing notebooks below.
+        Enter a topic, paste multi-line notes or AI chat, or attach a .pdf / .md file to generate 4–8 initial Concept Blocks.
       </p>
 
       {error && (
@@ -201,24 +306,113 @@ export function SeedModal({
       )}
 
       <form onSubmit={handleSubmit}>
-        <label
-          htmlFor="seed-topic-input"
+        <div
           style={{
-            display: 'block',
-            fontSize: '13px',
-            fontWeight: 500,
-            color: '#18181B',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
             marginBottom: '8px',
           }}
         >
-          Topic Prompt / Search Existing
-        </label>
+          <label
+            htmlFor="seed-topic-input"
+            style={{
+              fontSize: '13px',
+              fontWeight: 500,
+              color: '#18181B',
+            }}
+          >
+            Topic Prompt / Search Existing
+          </label>
+          <div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              aria-label="Upload source file"
+              accept=".pdf,.md,.markdown,.txt,application/pdf,text/markdown,text/plain"
+              disabled={isSubmitting}
+              onChange={handleFileChange}
+              style={{ display: 'none' }}
+            />
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                backgroundColor: '#FAF8F5',
+                color: '#1D4ED8',
+                border: '1px solid #E4DFD7',
+                borderRadius: '6px',
+                padding: '4px 10px',
+                fontSize: '12px',
+                fontWeight: 500,
+                cursor: isSubmitting ? 'wait' : 'pointer',
+              }}
+            >
+              Attach .pdf or .md
+            </button>
+          </div>
+        </div>
+
+        {source && (
+          <div
+            data-testid="seed-source-attachment"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+              backgroundColor: '#F3EFEA',
+              border: '1px solid #E4DFD7',
+              borderRadius: '6px',
+              padding: '8px 12px',
+              marginBottom: '12px',
+              fontSize: '13px',
+              color: '#18181B',
+            }}
+          >
+            <span
+              style={{
+                fontWeight: 500,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Attached source: {source.filename}
+            </span>
+            <button
+              type="button"
+              aria-label="Remove source attachment"
+              disabled={isSubmitting}
+              onClick={handleRemoveSource}
+              style={{
+                backgroundColor: '#FFFFFF',
+                color: '#B91C1C',
+                border: '1px solid #FECACA',
+                borderRadius: '4px',
+                padding: '2px 8px',
+                fontSize: '12px',
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              Remove source
+            </button>
+          </div>
+        )}
+
         <input
           id="seed-topic-input"
           type="text"
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Enter a topic (e.g., Hamiltonian Mechanics, Adlerian Psychology, Information Warfare)"
+          onPaste={handlePaste}
+          placeholder={
+            source
+              ? 'Optional steering prompt (e.g., Focus on section 3)...'
+              : 'Enter a topic (e.g., Hamiltonian Mechanics, Adlerian Psychology, Information Warfare)'
+          }
           disabled={isSubmitting}
           style={{
             width: '100%',
@@ -459,7 +653,7 @@ export function SeedModal({
           )}
           <button
             type="submit"
-            disabled={isSubmitting || !prompt.trim()}
+            disabled={isSubmitting || (!prompt.trim() && !source)}
             style={{
               backgroundColor: '#1D4ED8',
               color: '#FFFFFF',
