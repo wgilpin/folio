@@ -5,12 +5,15 @@ services:
     restart: unless-stopped
     ports:
       - "4321:4321"
+    env_file:
+      - .env
     environment:
       - HOST=0.0.0.0
       - PORT=4321
       - FOLIO_WORKSPACE=/data/workspace
       - FOLIO_API_KEY=${TELEOSIS_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     volumes:
