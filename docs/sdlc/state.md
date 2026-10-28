@@ -49,9 +49,9 @@ Updated: 2026-10-28
 - [x] 08-orbstack-caddy-auth-and-skill — done
   - [x] epic-01-spa-server-container-and-caddy — merged 2026-10-27
   - [x] epic-02-cross-mac-folio-skill — merged 2026-10-27
-- [ ] 09-seed-from-source-and-attachment — in progress
+- [x] 09-seed-from-source-and-attachment — done
   - [x] epic-01-source-seed-and-attachment-api — merged 2026-10-28
-  - [x] epic-02-unified-seed-ui-and-sidebar-cleanup — reviewed 2026-10-28
+  - [x] epic-02-unified-seed-ui-and-sidebar-cleanup — merged 2026-10-28
 
 ## Notes for a fresh session
 
@@ -60,3 +60,4 @@ Updated: 2026-10-28
 - Phase 06 covers migrating `.folio/notebook.json` to `.folio/library.sqlite`, the auto-generated `README.md` hierarchical library index for external readers, full-text and semantic search across Concept Blocks, and agent pre-flight deduplication/cross-linking.
 - Phase 07 covers the unified central Learner Ability Record (combining self-supplied background, standing learning instructions, and engaged sources/topics) and a non-hiding **Done** check-off status on Concept Blocks.
 - Phase 08 covers deploying Folio as an always-on OrbStack container (`folio.teleosis.ai` on `web-routing`) behind central Caddy `forward_auth` (`tinyauth` browser SSO + `Authorization: Bearer $TELEOSIS_API_KEY` programmatic bypass in `/Users/will/projects/caddy`) and shipping a cross-Mac Folio Skill for external LLM chat sessions.
+- Phase 09 covers unified seeding from an uploaded file (`.pdf` or `.md`) or pasted text/AI chat transcript (with or without a steering prompt), raw source attachment persistence under `.folio/attachments/<docId>/<filename>` and `GET /api/doc/:id/source`, and removing the vestigial Root Folder switcher (`ISS-6`).
