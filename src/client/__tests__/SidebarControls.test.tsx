@@ -235,8 +235,8 @@ describe('SidebarControls (Epic 02 — BYOM, Pedagogical Profile & Workspace UI)
     });
   });
 
-  it('switches active notebook workspace folder from SidebarTree via POST /api/workspaces/switch and renders the new workspace document', async () => {
-    const workspaceAPayload = {
+  it('does not render the vestigial Root Folder input or Switch Workspace button in SidebarTree', async () => {
+    const initialDocPayload = {
       document: {
         id: 'index',
         title: 'Workspace A Topic',
@@ -270,50 +270,10 @@ describe('SidebarControls (Epic 02 — BYOM, Pedagogical Profile & Workspace UI)
       workspaces: ['/tmp/workspace-a'],
     };
 
-    const workspaceBPayload = {
-      document: {
-        id: 'index',
-        title: 'Workspace B Electrodynamics',
-        filename: 'index.md',
-        parentId: null,
-        parentBlockId: null,
-        childDocIds: [],
-      },
-      documents: {
-        index: {
-          id: 'index',
-          title: 'Workspace B Electrodynamics',
-          filename: 'index.md',
-          parentId: null,
-          parentBlockId: null,
-          childDocIds: [],
-        },
-      },
-      blocks: [{ id: 'b-001', markdown: '## Maxwell Equations' }],
-      toc: [{ level: 2, text: 'Maxwell Equations', blockId: 'b-001' }],
-      activeChat: null,
-      pendingEdits: [],
-      modelId: 'google:gemini-3.1-pro',
-      settings: {
-        modelId: 'google:gemini-3.1-pro',
-        reasoningEffort: 'medium',
-        activeProfileId: 'rigorous-derivation',
-        customSystemPrompt: '',
-      },
-      workspaceDir: '/tmp/workspace-b',
-      workspaces: ['/tmp/workspace-a', '/tmp/workspace-b'],
-    };
-
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === '/api/doc' && (!init?.method || init.method === 'GET')) {
-        return new Response(JSON.stringify(workspaceAPayload), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      if (url === '/api/workspaces/switch' && init?.method === 'POST') {
-        return new Response(JSON.stringify(workspaceBPayload), {
+        return new Response(JSON.stringify(initialDocPayload), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
@@ -329,42 +289,18 @@ describe('SidebarControls (Epic 02 — BYOM, Pedagogical Profile & Workspace UI)
       ).toBeTruthy();
     });
 
-    const workspaceInput = screen.getByLabelText(
-      'Workspace directory path'
-    ) as HTMLInputElement;
-    await waitFor(() => {
-      expect(workspaceInput.value).toBe('/tmp/workspace-a');
-    });
+    // Core Sidebar controls are present
+    expect(screen.getByLabelText('Search library')).toBeTruthy();
+    expect(screen.getByText('Document Tree')).toBeTruthy();
+    expect(screen.getByText('Current Doc ToC')).toBeTruthy();
+    expect(screen.getByLabelText('Active Model')).toBeTruthy();
+    expect(screen.getByLabelText('Reasoning Effort')).toBeTruthy();
+    expect(screen.getByLabelText('Pedagogical Profile')).toBeTruthy();
+    expect(screen.getByText('Learner Ability Record')).toBeTruthy();
 
-    fireEvent.change(workspaceInput, { target: { value: '/tmp/workspace-b' } });
-
-    const switchBtn = screen.getByRole('button', { name: 'Switch workspace' });
-    fireEvent.click(switchBtn);
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/workspaces/switch',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({ workspaceDir: '/tmp/workspace-b' }),
-        })
-      );
-      expect(
-        screen.getByRole('heading', {
-          level: 1,
-          name: 'Workspace B Electrodynamics',
-        })
-      ).toBeTruthy();
-    });
-
-    expect((screen.getByLabelText('Active Model') as HTMLSelectElement).value).toBe(
-      'google:gemini-3.1-pro'
-    );
-    expect(
-      (screen.getByLabelText('Reasoning Effort') as HTMLSelectElement).value
-    ).toBe('medium');
-    expect(
-      (screen.getByLabelText('Pedagogical Profile') as HTMLSelectElement).value
-    ).toBe('rigorous-derivation');
+    // Vestigial Root Folder / Switch Workspace controls are absent (ISS-6)
+    expect(screen.queryByText('Root Folder')).toBeNull();
+    expect(screen.queryByLabelText('Workspace directory path')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Switch workspace/i })).toBeNull();
   });
 });

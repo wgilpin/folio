@@ -50,8 +50,8 @@ Updated: 2026-10-28
   - [x] epic-01-spa-server-container-and-caddy — merged 2026-10-27
   - [x] epic-02-cross-mac-folio-skill — merged 2026-10-27
 - [ ] 09-seed-from-source-and-attachment — in progress
-  - [x] epic-01-source-seed-and-attachment-api — reviewed 2026-10-28
-  - [ ] epic-02-unified-seed-ui-and-sidebar-cleanup — pending
+  - [x] epic-01-source-seed-and-attachment-api — merged 2026-10-28
+  - [x] epic-02-unified-seed-ui-and-sidebar-cleanup — reviewed 2026-10-28
 
 ## Notes for a fresh session
 

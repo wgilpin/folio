@@ -7,6 +7,7 @@ import {
   type LearnerProfile,
   type NotebookSettings,
   type PendingSuggestedEdit,
+  type SeedSourceInput,
   type TocItem,
   type TopicFamiliarity,
 } from '../shared/schema.js';
@@ -424,7 +425,7 @@ export function App(): React.ReactElement {
     }
   };
 
-  const handleSeed = async (prompt: string) => {
+  const handleSeed = async (prompt: string, source?: SeedSourceInput) => {
     setIsSeeding(true);
     setSeedError(null);
 
@@ -432,7 +433,10 @@ export function App(): React.ReactElement {
       const res = await fetch('/api/doc/seed', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({
+          prompt,
+          ...(source ? { source } : {}),
+        }),
       });
 
       const data = await res.json();
@@ -997,7 +1001,31 @@ export function App(): React.ReactElement {
                     marginBottom: '8px',
                   }}
                 >
-                  <span>{document.filename}</span>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                    }}
+                  >
+                    <span>{document.filename}</span>
+                    {document.sourceAttachment && (
+                      <a
+                        data-testid="document-source-link"
+                        href={`/api/doc/${encodeURIComponent(document.id)}/source`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          color: '#1D4ED8',
+                          textDecoration: 'underline',
+                          fontSize: '12px',
+                          fontWeight: 500,
+                        }}
+                      >
+                        Source: {document.sourceAttachment.filename}
+                      </a>
+                    )}
+                  </div>
                   <div
                     style={{
                       display: 'flex',
