@@ -85,3 +85,14 @@ Issue ISS-5: Always-on OrbStack deployment (`folio.teleosis.ai`), Caddy central 
 **Not in this phase:** Multi-tenant user accounts, persistent inline chat histories, or code execution kernels.
 
 **Depends on:** Phase 01, Phase 02, Phase 03, Phase 04, Phase 05, Phase 06, Phase 07
+
+## Phase 09 — Seed from Source Material (Paste or File Upload) & Viewable Source Attachment
+
+**Goal:** Extend the unified Seed Topic flow (`POST /api/doc/seed`, empty-state Seed card, and Seed modal) so a document can start by uploading a `.pdf` or `.md` file or pasting raw source text (dirty web copy-paste or copied AI chat transcript) with an optional steering prompt, synthesizing the source into 4–8+ Concept Blocks while persisting the unmodified raw source on disk as a viewable document attachment (superseded in LLM context by subsequent cell chats), and remove the vestigial `Root Folder` switcher from the sidebar.
+Issue ISS-6: Remove or hide vestigial `Root Folder` (`/data/workspace`) switcher in the Notebook Sidebar.
+
+**Works after this phase:** You can start a Folio document by dropping/selecting a `.pdf` or `.md` file or pasting a web article or AI chat transcript into the unified Seed box (with or without a steering instruction), get a synthesized Concept Block document calibrated to your Learner Ability Record, open the saved raw source attachment anytime from the document header, and use a cleaner Notebook Sidebar without the vestigial `Root Folder` input.
+
+**Not in this phase:** Faithful verbatim document chunking/import without LLM synthesis (deferred to a later phase for `.pdf` and `.md` uploads), automatic cleanup of the saved raw text attachment, whole-textbook multi-document splitting, or re-injecting the raw attachment into subsequent `Ask Cell` / `Integrate` contexts.
+
+**Depends on:** Phase 01, Phase 02, Phase 03, Phase 04, Phase 05, Phase 06, Phase 07, Phase 08

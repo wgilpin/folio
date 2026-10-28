@@ -15,6 +15,9 @@ import {
   type PendingSuggestedEdit,
   type RelatedLibraryDoc,
   type SeedResult,
+  type SeedSourceInput,
+  type SourceAttachment,
+  type SourceAttachmentKind,
   type TocItem,
 } from '../shared/schema.js';
 import {
@@ -52,6 +55,25 @@ function slugifyTitle(title: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
   return slug || 'subdoc';
+}
+
+function sanitizeAttachmentFilename(filename: string): string {
+  const base = path.basename(filename.trim());
+  const cleaned = base.replace(/[^a-zA-Z0-9._-]+/g, '_');
+  return cleaned || 'source.txt';
+}
+
+function inferAttachmentKind(input: SeedSourceInput): SourceAttachmentKind {
+  if (input.kind) {
+    return input.kind;
+  }
+  if (input.mediaType === 'application/pdf') {
+    return 'pdf';
+  }
+  if (input.mediaType === 'text/markdown') {
+    return 'markdown';
+  }
+  return 'paste';
 }
 
 function splitMarkdownContent(markdown: string, offset?: number): [string, string] {
@@ -241,7 +263,10 @@ export class WorkspaceStore {
     return firstAny ?? 'index';
   }
 
-  async seedRootDocument(seedResult: SeedResult): Promise<LoadedDocument> {
+  async seedRootDocument(
+    seedResult: SeedResult,
+    sourceInput?: SeedSourceInput
+  ): Promise<LoadedDocument> {
     const state = await this.loadState();
     const conciseTitle = getConciseTitle(seedResult.title, seedResult.shortTitle);
     const baseSlug = slugifyTitle(conciseTitle);
@@ -250,6 +275,30 @@ export class WorkspaceStore {
     while (state.documents[docId]) {
       docId = `${baseSlug}-${suffix}`;
       suffix += 1;
+    }
+
+    let sourceAttachment: SourceAttachment | undefined;
+    if (sourceInput) {
+      const safeFilename = sanitizeAttachmentFilename(sourceInput.filename);
+      const rawBuffer =
+        sourceInput.encoding === 'base64'
+          ? Buffer.from(sourceInput.content, 'base64')
+          : Buffer.from(sourceInput.content, 'utf-8');
+      const attachmentDir = path.join(
+        this.workspaceDir,
+        '.folio',
+        'attachments',
+        docId
+      );
+      await fs.mkdir(attachmentDir, { recursive: true });
+      await fs.writeFile(path.join(attachmentDir, safeFilename), rawBuffer);
+      sourceAttachment = {
+        filename: safeFilename,
+        mediaType: sourceInput.mediaType,
+        kind: inferAttachmentKind(sourceInput),
+        byteSize: rawBuffer.byteLength,
+        createdAt: new Date().toISOString(),
+      };
     }
 
     const rawBlocks = seedResult.blocks.map((markdown, index) => ({
@@ -278,7 +327,35 @@ export class WorkspaceStore {
       parentId: null,
       parentBlockId: null,
       prerequisites,
+      ...(sourceAttachment ? { sourceAttachment } : {}),
     });
+  }
+
+  async readSourceAttachment(
+    requestedDocId?: string
+  ): Promise<{ attachment: SourceAttachment; buffer: Buffer } | null> {
+    const docId = await this.resolveDocId(requestedDocId);
+    const state = await this.loadState();
+    const doc = state.documents[docId];
+    if (!doc?.sourceAttachment) {
+      return null;
+    }
+    const attachmentPath = path.join(
+      this.workspaceDir,
+      '.folio',
+      'attachments',
+      doc.id,
+      doc.sourceAttachment.filename
+    );
+    try {
+      const buffer = await fs.readFile(attachmentPath);
+      return {
+        attachment: doc.sourceAttachment,
+        buffer,
+      };
+    } catch {
+      return null;
+    }
   }
 
   async loadDocument(requestedDocId?: string): Promise<LoadedDocument> {
@@ -381,6 +458,7 @@ export class WorkspaceStore {
       parentBlockId?: string | null;
       prerequisites?: string[];
       prerequisiteDocIds?: Record<string, string>;
+      sourceAttachment?: SourceAttachment;
     }
   ): Promise<LoadedDocument> {
     const docId = options?.id ?? 'index';
@@ -409,6 +487,9 @@ export class WorkspaceStore {
       options?.prerequisiteDocIds ?? existing?.prerequisiteDocIds
     );
 
+    const resolvedSourceAttachment =
+      options?.sourceAttachment ?? existing?.sourceAttachment;
+
     const docNode: DocumentNode = {
       id: docId,
       title,
@@ -423,6 +504,9 @@ export class WorkspaceStore {
       ...(resolvedPrerequisiteDocIds &&
       Object.keys(resolvedPrerequisiteDocIds).length > 0
         ? { prerequisiteDocIds: resolvedPrerequisiteDocIds }
+        : {}),
+      ...(resolvedSourceAttachment
+        ? { sourceAttachment: resolvedSourceAttachment }
         : {}),
     };
 
@@ -1913,6 +1997,14 @@ export class WorkspaceStore {
         await fs.unlink(path.join(this.workspaceDir, filename));
       } catch {
         // Ignore if file already removed
+      }
+      try {
+        await fs.rm(
+          path.join(this.workspaceDir, '.folio', 'attachments', id),
+          { recursive: true, force: true }
+        );
+      } catch {
+        // Ignore if attachment directory does not exist
       }
       delete state.documents[id];
     }

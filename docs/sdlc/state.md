@@ -1,7 +1,7 @@
 # SDLC state
 
 Project: folio
-Updated: 2026-10-27
+Updated: 2026-10-28
 
 ## Stack
 
@@ -18,7 +18,7 @@ Updated: 2026-10-27
 - explore: skipped
 - architecture: approved 2026-10-18
 - design: approved 2026-10-18
-- phases: approved 2026-10-18
+- phases: approved 2026-10-28
 
 ## Phases
 
@@ -49,6 +49,9 @@ Updated: 2026-10-27
 - [x] 08-orbstack-caddy-auth-and-skill — done
   - [x] epic-01-spa-server-container-and-caddy — merged 2026-10-27
   - [x] epic-02-cross-mac-folio-skill — merged 2026-10-27
+- [ ] 09-seed-from-source-and-attachment — in progress
+  - [x] epic-01-source-seed-and-attachment-api — reviewed 2026-10-28
+  - [ ] epic-02-unified-seed-ui-and-sidebar-cleanup — pending
 
 ## Notes for a fresh session
 

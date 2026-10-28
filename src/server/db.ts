@@ -10,6 +10,7 @@ import {
   type NotebookSettings,
   type NotebookState,
   type PendingSuggestedEdit,
+  type SourceAttachment,
 } from '../shared/schema.js';
 import { extractToc, parseMarkdownBlocks } from './markdown.js';
 import { buildFtsTokens, computeSemanticEmbedding } from './search.js';
@@ -30,6 +31,7 @@ export function initializeSchema(db: DatabaseSync): void {
       child_doc_ids_json TEXT NOT NULL DEFAULT '[]',
       prerequisites_json TEXT,
       prerequisite_doc_ids_json TEXT,
+      source_attachment_json TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0
     );
 
@@ -89,6 +91,12 @@ export function initializeSchema(db: DatabaseSync): void {
   } catch {
     // Column already exists
   }
+
+  try {
+    db.exec('ALTER TABLE documents ADD COLUMN source_attachment_json TEXT');
+  } catch {
+    // Column already exists
+  }
 }
 
 function extractPrimaryHeading(block: ConceptBlock): string | null {
@@ -120,8 +128,9 @@ export function writeStateToSqlite(
         child_doc_ids_json,
         prerequisites_json,
         prerequisite_doc_ids_json,
+        source_attachment_json,
         sort_order
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertTopicLink = db.prepare(`
@@ -145,6 +154,7 @@ export function writeStateToSqlite(
         doc.prerequisiteDocIds && Object.keys(doc.prerequisiteDocIds).length > 0
           ? JSON.stringify(doc.prerequisiteDocIds)
           : null,
+        doc.sourceAttachment ? JSON.stringify(doc.sourceAttachment) : null,
         index
       );
 
@@ -297,7 +307,8 @@ export function readStateFromSqlite(db: DatabaseSync): NotebookState {
         parent_block_id,
         child_doc_ids_json,
         prerequisites_json,
-        prerequisite_doc_ids_json
+        prerequisite_doc_ids_json,
+        source_attachment_json
       FROM documents
       ORDER BY sort_order ASC, rowid ASC`
     )
@@ -311,6 +322,7 @@ export function readStateFromSqlite(db: DatabaseSync): NotebookState {
     child_doc_ids_json: string;
     prerequisites_json: string | null;
     prerequisite_doc_ids_json: string | null;
+    source_attachment_json: string | null;
   }>;
 
   const documents: Record<string, DocumentNode> = {};
@@ -321,6 +333,9 @@ export function readStateFromSqlite(db: DatabaseSync): NotebookState {
       : undefined;
     const prerequisiteDocIds = row.prerequisite_doc_ids_json
       ? (JSON.parse(row.prerequisite_doc_ids_json) as Record<string, string>)
+      : undefined;
+    const sourceAttachment = row.source_attachment_json
+      ? (JSON.parse(row.source_attachment_json) as SourceAttachment)
       : undefined;
 
     documents[row.id] = {
@@ -335,6 +350,7 @@ export function readStateFromSqlite(db: DatabaseSync): NotebookState {
       ...(prerequisiteDocIds && Object.keys(prerequisiteDocIds).length > 0
         ? { prerequisiteDocIds }
         : {}),
+      ...(sourceAttachment ? { sourceAttachment } : {}),
     };
   }
 

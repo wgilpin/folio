@@ -18,6 +18,7 @@ import {
   type ReasoningEffort,
   type RelatedLibraryDoc,
   type SeedResult,
+  type SeedSourceInput,
 } from '../shared/schema.js';
 import type { BoundedCellContext, DocumentContext } from './context.js';
 import { isPrerequisiteBlock } from './markdown.js';
@@ -28,6 +29,7 @@ export interface SeedGeneratorOptions {
   pedagogicalPrompt?: string;
   learnerProfile?: LearnerProfile;
   relatedLibraryDocs?: RelatedLibraryDoc[];
+  source?: SeedSourceInput;
 }
 
 export type SeedGenerator = (
@@ -303,20 +305,76 @@ export const defaultSeedGenerator: SeedGenerator = async (
   const relatedLibrarySection = formatRelatedLibraryDocsPrompt(
     options?.relatedLibraryDocs
   );
+  const source = options?.source;
+  const cleanPrompt = prompt.trim();
+
+  const systemPrompt = [
+    'You are an editorial notebook author writing for a curious, intelligent learner exploring a subject.',
+    pedagogicalPrompt,
+    formatLearnerProfilePrompt(options?.learnerProfile),
+    ...(relatedLibrarySection ? [relatedLibrarySection] : []),
+    ...(source
+      ? [
+          'Source Material Synthesis Instructions: When source material (an uploaded PDF, Markdown document, or pasted web/chat transcript) is provided, distill and synthesize its core concepts, mechanisms, arguments, and takeaways into 4 to 8 structured Concept Blocks. Strip away conversational filler, chat turn scaffolding, navigation chrome, or formatting noise while staying faithful to the substance of the source. If a steering topic prompt is provided, prioritize that angle; if the prompt is empty, infer the clearest overarching title and structure directly from the source material.',
+        ]
+      : []),
+    KATEX_MATH_FORMATTING_RULES,
+    `Reasoning Effort: ${reasoningEffort}`,
+    TOC_AND_PREREQUISITES_ORDERING_RULES,
+  ].join('\n');
+
+  if (source) {
+    const steeringInstruction = cleanPrompt
+      ? `Steering prompt / focus: ${cleanPrompt}\n\n`
+      : 'No explicit steering prompt was provided; infer the topic, title, and structure directly from the source material.\n\n';
+
+    if (
+      source.encoding === 'base64' &&
+      source.mediaType === 'application/pdf'
+    ) {
+      const { object } = await generateObject({
+        model,
+        schema: SeedResultSchema,
+        system: systemPrompt,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `${steeringInstruction}Synthesize a structured notebook document from the attached PDF source (${source.filename}).`,
+              },
+              {
+                type: 'file',
+                data: Buffer.from(source.content, 'base64'),
+                mediaType: 'application/pdf',
+              },
+            ],
+          },
+        ],
+      });
+      return object;
+    }
+
+    const decodedText =
+      source.encoding === 'base64'
+        ? Buffer.from(source.content, 'base64').toString('utf-8')
+        : source.content;
+
+    const { object } = await generateObject({
+      model,
+      schema: SeedResultSchema,
+      system: systemPrompt,
+      prompt: `${steeringInstruction}Synthesize a structured notebook document from the following source material (${source.filename}, ${source.mediaType}):\n\n${decodedText}`,
+    });
+    return object;
+  }
 
   const { object } = await generateObject({
     model,
     schema: SeedResultSchema,
-    system: [
-      'You are an editorial notebook author writing for a curious, intelligent learner exploring a subject.',
-      pedagogicalPrompt,
-      formatLearnerProfilePrompt(options?.learnerProfile),
-      ...(relatedLibrarySection ? [relatedLibrarySection] : []),
-      KATEX_MATH_FORMATTING_RULES,
-      `Reasoning Effort: ${reasoningEffort}`,
-      TOC_AND_PREREQUISITES_ORDERING_RULES,
-    ].join('\n'),
-    prompt: `Seed a notebook document for the topic: ${prompt}`,
+    system: systemPrompt,
+    prompt: `Seed a notebook document for the topic: ${cleanPrompt}`,
   });
 
   return object;
