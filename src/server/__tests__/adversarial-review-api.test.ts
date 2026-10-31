@@ -7,6 +7,8 @@ import {
   ADVERSARIAL_REVIEW_INSTRUCTIONS,
   PEDAGOGICAL_PROFILES,
   resolvePedagogicalPrompt,
+  type CellChatGenerator,
+  type DocumentChatGenerator,
 } from '../llm.js';
 
 describe('Adversarial Review API (Epic 01)', () => {
@@ -68,7 +70,7 @@ describe('Adversarial Review API (Epic 01)', () => {
 
   it('POST /api/doc/review audits full document context plus saved raw sourceAttachment when present, persists activeChat (blockId: null), and enforces 409 pendingEdits gate', async () => {
     let targetAdjacentBlockId = 'blk_02';
-    const documentChatGenerator = vi.fn(
+    const documentChatGenerator = vi.fn<DocumentChatGenerator>(
       async () =>
         '### Serious / Fatal Gaps\n- Memory bandwidth bottleneck (requires 4 TB/s, link provides 400 GB/s).\n\n### Moderate Gaps\n- Missing calibration loop.\n\n### Small Number / Arithmetic Errors\n- Factor of 2 error in SRAM capacity.\n\n### Result and Open Risks\n- Unresolved thermal envelope.'
     );
@@ -147,13 +149,13 @@ describe('Adversarial Review API (Epic 01)', () => {
     );
 
     expect(documentChatGenerator).toHaveBeenCalledTimes(1);
-    const callArg = documentChatGenerator.mock.calls[0][0];
+    const callArg = documentChatGenerator.mock.calls[0]![0];
     expect(callArg.context.docId).toBe(docId);
     expect(callArg.context.blocks).toHaveLength(4);
     expect(callArg.pedagogicalPrompt).toContain('Adopt a Falsification Mindset');
     expect(callArg.source).toBeDefined();
-    expect(callArg.source.filename).toBe('photonic-spec.md');
-    expect(callArg.source.content).toBe(rawSourceSpec);
+    expect(callArg.source?.filename).toBe('photonic-spec.md');
+    expect(callArg.source?.content).toBe(rawSourceSpec);
 
     // Discard doc chat, create a pending edit via cell chat + integrate, then verify 409 gate
     await app.request(`/api/doc/chat?docId=${docId}`, { method: 'DELETE' });
@@ -181,7 +183,7 @@ describe('Adversarial Review API (Epic 01)', () => {
 
   it('POST /api/blocks/:id/review audits bounded [N-1, N, N+1] cell context without sourceAttachment, persists activeChat (blockId: id), and enforces 409 pendingEdits gate', async () => {
     let targetAdjacentBlockId = 'blk_02';
-    const cellChatGenerator = vi.fn(
+    const cellChatGenerator = vi.fn<CellChatGenerator>(
       async () =>
         '### Serious / Fatal Gaps\n- Block 1 MZI mesh clocking ignores DAC RC time constant.\n\n### Result and Open Risks\n- Need pipelined DAC driver spec.'
     );
@@ -257,7 +259,7 @@ describe('Adversarial Review API (Epic 01)', () => {
     );
 
     expect(cellChatGenerator).toHaveBeenCalledTimes(1);
-    const callArg = cellChatGenerator.mock.calls[0][0] as Record<
+    const callArg = cellChatGenerator.mock.calls[0]![0] as unknown as Record<
       string,
       unknown
     >;
