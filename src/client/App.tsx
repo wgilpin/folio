@@ -43,11 +43,13 @@ export function App(): React.ReactElement {
   const [isSendingDocChat, setIsSendingDocChat] = useState<boolean>(false);
   const [isIntegratingDocChat, setIsIntegratingDocChat] = useState<boolean>(false);
   const [isBranchingDocChat, setIsBranchingDocChat] = useState<boolean>(false);
+  const [isReviewingDoc, setIsReviewingDoc] = useState<boolean>(false);
   const [docChatError, setDocChatError] = useState<string | null>(null);
   const [pendingEdits, setPendingEdits] = useState<PendingSuggestedEdit[]>([]);
   const [isSendingChat, setIsSendingChat] = useState<boolean>(false);
   const [isIntegratingChat, setIsIntegratingChat] = useState<boolean>(false);
   const [isBranchingChat, setIsBranchingChat] = useState<boolean>(false);
+  const [isReviewingCell, setIsReviewingCell] = useState<boolean>(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [modelId, setModelId] = useState<string>('anthropic:claude-opus-4-6');
   const [settings, setSettings] = useState<NotebookSettings>({
@@ -820,6 +822,81 @@ export function App(): React.ReactElement {
     }
   };
 
+  const handleRunDocAdversarialReview = async () => {
+    if (pendingEdits.length > 0 || isReviewingDoc) {
+      return;
+    }
+    setIsReviewingDoc(true);
+    setDocChatError(null);
+    setIsDocChatOpen(true);
+    if (activeChatBlockId !== null) {
+      setActiveChatBlockId(null);
+    }
+
+    try {
+      const res = await fetch('/api/doc/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ docId: document?.id ?? 'index' }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          data.error ?? `Failed to run adversarial review (${res.status})`
+        );
+      }
+
+      setActiveChat(data.activeChat as EphemeralChatThread);
+      setActiveChatBlockId(null);
+      setIsDocChatOpen(true);
+    } catch (err) {
+      setDocChatError(
+        err instanceof Error ? err.message : 'Failed to run adversarial review'
+      );
+    } finally {
+      setIsReviewingDoc(false);
+    }
+  };
+
+  const handleRunCellAdversarialReview = async (blockId: string) => {
+    if (pendingEdits.length > 0 || isReviewingCell) {
+      return;
+    }
+    setIsReviewingCell(true);
+    setChatError(null);
+    setActiveChatBlockId(blockId);
+
+    try {
+      const res = await fetch(
+        `/api/blocks/${encodeURIComponent(blockId)}/review`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ docId: document?.id ?? 'index' }),
+        }
+      );
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          data.error ?? `Failed to run cell adversarial review (${res.status})`
+        );
+      }
+
+      setActiveChat(data.activeChat as EphemeralChatThread);
+      setActiveChatBlockId(blockId);
+    } catch (err) {
+      setChatError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to run cell adversarial review'
+      );
+    } finally {
+      setIsReviewingCell(false);
+    }
+  };
+
   const handleAcceptEdit = async (editId: string) => {
     try {
       const res = await fetch(
@@ -1049,6 +1126,30 @@ export function App(): React.ReactElement {
                     </span>
                     <button
                       type="button"
+                      aria-label="Run Adversarial Review on notebook"
+                      data-testid="doc-adversarial-review-btn"
+                      disabled={pendingEdits.length > 0 || isReviewingDoc}
+                      onClick={() => void handleRunDocAdversarialReview()}
+                      style={{
+                        backgroundColor: '#FEF3C7',
+                        color: '#B45309',
+                        border: '1px solid #F59E0B',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor:
+                          pendingEdits.length > 0 || isReviewingDoc
+                            ? 'not-allowed'
+                            : 'pointer',
+                        opacity:
+                          pendingEdits.length > 0 || isReviewingDoc ? 0.5 : 1,
+                      }}
+                    >
+                      {isReviewingDoc ? 'Reviewing...' : 'Adversarial Review'}
+                    </button>
+                    <button
+                      type="button"
                       aria-label="Delete current notebook"
                       onClick={() => void handleDeleteDocument(document.id)}
                       style={{
@@ -1109,6 +1210,7 @@ export function App(): React.ReactElement {
                       isSendingChat={isChatOpen && isSendingChat}
                       isIntegratingChat={isChatOpen && isIntegratingChat}
                       isBranchingChat={isChatOpen && isBranchingChat}
+                      isReviewingChat={isChatOpen && isReviewingCell}
                       chatError={isChatOpen ? chatError : null}
                       isChatLocked={pendingEdits.length > 0}
                       askCellDisabled={pendingEdits.length > 0}
@@ -1137,6 +1239,7 @@ export function App(): React.ReactElement {
                       onIntegrateChat={handleIntegrateChat}
                       onBranchChat={handleBranchChat}
                       onDiscardChat={handleDiscardChat}
+                      onRunAdversarialReview={handleRunCellAdversarialReview}
                       onAcceptEdit={handleAcceptEdit}
                       onRejectEdit={handleRejectEdit}
                       onUpdateMarkdown={handleUpdateBlock}
@@ -1164,6 +1267,7 @@ export function App(): React.ReactElement {
             isSending={isSendingDocChat}
             isIntegrating={isIntegratingDocChat}
             isBranching={isBranchingDocChat}
+            isReviewing={isReviewingDoc}
             isChatLocked={pendingEdits.length > 0}
             error={docChatError}
             onToggleOpen={handleToggleDocChat}
@@ -1171,6 +1275,7 @@ export function App(): React.ReactElement {
             onIntegrate={handleIntegrateDocChat}
             onBranch={handleBranchDocChat}
             onDiscard={handleDiscardDocChat}
+            onRunAdversarialReview={handleRunDocAdversarialReview}
           />
         )}
       </main>

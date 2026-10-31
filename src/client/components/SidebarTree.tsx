@@ -642,6 +642,7 @@ export function SidebarTree({
           >
             <option value="intuitive-physical">Intuitive & Conceptual</option>
             <option value="rigorous-derivation">Rigorous & Formal</option>
+            <option value="adversarial-review">Adversarial Spec Review</option>
             <option value="custom">Custom Prompt</option>
           </select>
         </div>

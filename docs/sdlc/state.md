@@ -52,9 +52,9 @@ Updated: 2026-10-31
 - [x] 09-seed-from-source-and-attachment — done
   - [x] epic-01-source-seed-and-attachment-api — merged 2026-10-28
   - [x] epic-02-unified-seed-ui-and-sidebar-cleanup — merged 2026-10-28
-- [ ] 10-adversarial-review — in progress
-  - [x] epic-01-adversarial-review-api — reviewed 2026-10-31
-  - [ ] epic-02-adversarial-review-ui — pending
+- [x] 10-adversarial-review — done
+  - [x] epic-01-adversarial-review-api — merged 2026-10-31
+  - [x] epic-02-adversarial-review-ui — merged 2026-10-31
 
 ## Notes for a fresh session
 

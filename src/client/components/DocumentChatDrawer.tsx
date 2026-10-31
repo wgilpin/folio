@@ -9,6 +9,7 @@ export interface DocumentChatDrawerProps {
   isSending?: boolean;
   isIntegrating?: boolean;
   isBranching?: boolean;
+  isReviewing?: boolean;
   isChatLocked?: boolean;
   error?: string | null;
   onToggleOpen: () => void;
@@ -16,6 +17,7 @@ export interface DocumentChatDrawerProps {
   onIntegrate: () => Promise<void> | void;
   onBranch: () => Promise<void> | void;
   onDiscard: () => Promise<void> | void;
+  onRunAdversarialReview?: () => Promise<void> | void;
 }
 
 export function DocumentChatDrawer({
@@ -25,6 +27,7 @@ export function DocumentChatDrawer({
   isSending = false,
   isIntegrating = false,
   isBranching = false,
+  isReviewing = false,
   isChatLocked = false,
   error = null,
   onToggleOpen,
@@ -32,6 +35,7 @@ export function DocumentChatDrawer({
   onIntegrate,
   onBranch,
   onDiscard,
+  onRunAdversarialReview,
 }: DocumentChatDrawerProps): React.ReactElement {
   const [input, setInput] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -49,7 +53,7 @@ export function DocumentChatDrawer({
     }
   }, [isOpen, messages]);
 
-  const busy = isSending || isIntegrating || isBranching;
+  const busy = isSending || isIntegrating || isBranching || isReviewing;
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -217,24 +221,48 @@ export function DocumentChatDrawer({
               </div>
             </div>
 
-            <button
-              type="button"
-              aria-label="Close Ask Notebook drawer"
-              data-testid="close-document-chat"
-              onClick={onToggleOpen}
-              style={{
-                backgroundColor: 'transparent',
-                border: 'none',
-                color: '#65635E',
-                fontSize: '18px',
-                lineHeight: 1,
-                cursor: 'pointer',
-                padding: '4px 6px',
-                borderRadius: '4px',
-              }}
-            >
-              ✕
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                aria-label="Run Adversarial Review in Ask Notebook"
+                data-testid="drawer-doc-adversarial-review-btn"
+                disabled={busy || isChatLocked}
+                onClick={() => void onRunAdversarialReview?.()}
+                style={{
+                  fontFamily: "'Inter', system-ui, sans-serif",
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid #F59E0B',
+                  backgroundColor: '#FEF3C7',
+                  color: '#B45309',
+                  cursor: busy || isChatLocked ? 'not-allowed' : 'pointer',
+                  opacity: busy || isChatLocked ? 0.5 : 1,
+                }}
+              >
+                {isReviewing ? 'Auditing...' : 'Adversarial Review'}
+              </button>
+
+              <button
+                type="button"
+                aria-label="Close Ask Notebook drawer"
+                data-testid="close-document-chat"
+                onClick={onToggleOpen}
+                style={{
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  color: '#65635E',
+                  fontSize: '18px',
+                  lineHeight: 1,
+                  cursor: 'pointer',
+                  padding: '4px 6px',
+                  borderRadius: '4px',
+                }}
+              >
+                ✕
+              </button>
+            </div>
           </div>
 
           {/* Messages Area */}

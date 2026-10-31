@@ -171,6 +171,7 @@ export interface ConceptBlockCardProps {
   isSendingChat?: boolean;
   isIntegratingChat?: boolean;
   isBranchingChat?: boolean;
+  isReviewingChat?: boolean;
   chatError?: string | null;
   askCellDisabled?: boolean;
   isChatLocked?: boolean;
@@ -192,6 +193,7 @@ export interface ConceptBlockCardProps {
   onIntegrateChat?: (blockId: string) => Promise<void> | void;
   onBranchChat?: (blockId: string) => Promise<void> | void;
   onDiscardChat?: (blockId: string) => Promise<void> | void;
+  onRunAdversarialReview?: (blockId: string) => Promise<void> | void;
   onUpdateMarkdown?: (blockId: string, markdown: string) => Promise<void> | void;
   onSplitBlock?: (blockId: string) => Promise<void> | void;
   onMergeBlock?: (blockId: string) => Promise<void> | void;
@@ -285,6 +287,7 @@ export function ConceptBlockCard({
   isSendingChat = false,
   isIntegratingChat = false,
   isBranchingChat = false,
+  isReviewingChat = false,
   chatError = null,
   askCellDisabled = false,
   isChatLocked = false,
@@ -303,6 +306,7 @@ export function ConceptBlockCard({
   onIntegrateChat,
   onBranchChat,
   onDiscardChat,
+  onRunAdversarialReview,
   onUpdateMarkdown,
   onSplitBlock,
   onMergeBlock,
@@ -922,6 +926,36 @@ export function ConceptBlockCard({
           </svg>
         </button>
 
+        <span style={{ display: 'inline-flex' }}>
+          <button
+            type="button"
+            aria-label={`Adversarial review cell ${block.id}`}
+            data-testid={`cell-adversarial-review-btn-${block.id}`}
+            disabled={Boolean(askCellDisabled || isChatLocked || isReviewingChat)}
+            title={
+              isLocked
+                ? 'Resolve pending suggested edits first'
+                : 'Run falsification-first Adversarial Review on this cell'
+            }
+            onClick={() => void onRunAdversarialReview?.(block.id)}
+            style={{
+              ...actionBtnStyle,
+              backgroundColor: '#FEF3C7',
+              color: '#B45309',
+              borderColor: '#F59E0B',
+              fontWeight: 500,
+              opacity: Boolean(askCellDisabled || isChatLocked || isReviewingChat)
+                ? 0.5
+                : 1,
+              cursor: Boolean(askCellDisabled || isChatLocked || isReviewingChat)
+                ? 'not-allowed'
+                : 'pointer',
+            }}
+          >
+            {isReviewingChat ? 'Reviewing...' : 'Adversarial Review'}
+          </button>
+        </span>
+
         <button
           type="button"
           aria-label={`Ask cell ${block.id}`}
@@ -1061,11 +1095,13 @@ export function ConceptBlockCard({
           isSending={isSendingChat}
           isIntegrating={isIntegratingChat}
           isBranching={isBranchingChat}
+          isReviewing={isReviewingChat}
           error={chatError}
           onSendMessage={(msg) => void onSendChatMessage?.(block.id, msg)}
           onIntegrate={() => void onIntegrateChat?.(block.id)}
           onBranch={() => void onBranchChat?.(block.id)}
           onDiscard={() => void onDiscardChat?.(block.id)}
+          onRunAdversarialReview={() => void onRunAdversarialReview?.(block.id)}
         />
       )}
     </article>
