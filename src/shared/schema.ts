@@ -146,6 +146,7 @@ export type ReasoningEffort = z.infer<typeof ReasoningEffortSchema>;
 export const PedagogicalProfileIdSchema = z.enum([
   'intuitive-physical',
   'rigorous-derivation',
+  'adversarial-review',
   'custom',
 ]);
 

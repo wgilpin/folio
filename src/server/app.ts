@@ -12,10 +12,12 @@ import {
   SeedSourceInputSchema,
   TopicFamiliaritySchema,
   type ChatMessage,
+  type SeedSourceInput,
 } from '../shared/schema.js';
 import { buildBoundedCellContext, buildDocumentContext } from './context.js';
 import { searchWorkspaceLibrary } from './search.js';
 import {
+  ADVERSARIAL_REVIEW_INSTRUCTIONS,
   defaultBranchGenerator,
   defaultCellChatGenerator,
   defaultDocumentBranchGenerator,
@@ -96,6 +98,11 @@ const IntegrateRequestSchema = z.object({
 
 const BranchRequestSchema = z.object({
   docId: z.string().optional(),
+});
+
+const ReviewRequestSchema = z.object({
+  docId: z.string().optional(),
+  prompt: z.string().optional(),
 });
 
 const UpdateSettingsRequestSchema = z.object({
@@ -750,6 +757,101 @@ export function createApp(options: CreateAppOptions): Hono {
     return c.json({ activeChat: null });
   });
 
+  app.post('/api/doc/review', async (c) => {
+    await ensureWorkspaceInitialized();
+    let rawBody: unknown = {};
+    try {
+      const text = await c.req.text();
+      if (text.trim()) {
+        rawBody = JSON.parse(text);
+      }
+    } catch {
+      return c.json({ error: 'Invalid JSON request body' }, 400);
+    }
+
+    const parsedReq = ReviewRequestSchema.safeParse(rawBody);
+    if (!parsedReq.success) {
+      return c.json({ error: 'Invalid review request' }, 400);
+    }
+
+    const docId = await store.resolveDocId(parsedReq.data.docId);
+    const pendingEdits = await store.getPendingEdits(docId);
+    if (pendingEdits.length > 0) {
+      return c.json({ error: 'Resolve pending suggested edits first' }, 409);
+    }
+
+    try {
+      const context = await buildDocumentContext(store, docId);
+      const sourceData = await store.readSourceAttachment(docId);
+      let source: SeedSourceInput | undefined;
+      if (sourceData) {
+        const { attachment, buffer } = sourceData;
+        if (attachment.mediaType === 'application/pdf') {
+          source = {
+            filename: attachment.filename,
+            mediaType: attachment.mediaType,
+            kind: attachment.kind,
+            content: buffer.toString('base64'),
+            encoding: 'base64',
+          };
+        } else {
+          source = {
+            filename: attachment.filename,
+            mediaType: attachment.mediaType,
+            kind: attachment.kind,
+            content: buffer.toString('utf-8'),
+            encoding: 'utf-8',
+          };
+        }
+      }
+
+      const userMessage =
+        parsedReq.data.prompt?.trim() ||
+        'Run a falsification-first Adversarial Spec Review of this entire notebook.';
+      const existingChat = await store.getActiveChat(docId);
+      const priorMessages: ChatMessage[] =
+        existingChat && existingChat.blockId === null
+          ? existingChat.messages
+          : [];
+
+      const messagesForGenerator: ChatMessage[] = [
+        ...priorMessages,
+        { role: 'user', content: userMessage },
+      ];
+      const settings = await store.getSettings(getDefaultModelId());
+      const profile = await profileStore.loadProfile();
+
+      const assistantReply = await documentChatGenerator({
+        context,
+        messages: messagesForGenerator,
+        modelId: settings.modelId,
+        reasoningEffort: settings.reasoningEffort,
+        pedagogicalPrompt: ADVERSARIAL_REVIEW_INSTRUCTIONS,
+        ...(hasLearnerProfileContent(profile)
+          ? { learnerProfile: profile }
+          : {}),
+        ...(source ? { source } : {}),
+      });
+
+      const activeChat = await store.appendChatMessage(
+        docId,
+        null,
+        settings.modelId,
+        userMessage,
+        assistantReply
+      );
+
+      return c.json({ activeChat });
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to run document adversarial review';
+      const status = message.includes('not found') ? 404 : 500;
+      return c.json({ error: message }, status);
+    }
+  });
+
   app.post('/api/doc/integrate', async (c) => {
     await ensureWorkspaceInitialized();
     let rawBody: unknown = {};
@@ -1239,6 +1341,78 @@ export function createApp(options: CreateAppOptions): Hono {
 
     await store.discardChat(docId, blockId);
     return c.json({ activeChat: null });
+  });
+
+  app.post('/api/blocks/:id/review', async (c) => {
+    await ensureWorkspaceInitialized();
+    const blockId = c.req.param('id');
+    let rawBody: unknown = {};
+    try {
+      const text = await c.req.text();
+      if (text.trim()) {
+        rawBody = JSON.parse(text);
+      }
+    } catch {
+      return c.json({ error: 'Invalid JSON request body' }, 400);
+    }
+
+    const parsedReq = ReviewRequestSchema.safeParse(rawBody);
+    if (!parsedReq.success) {
+      return c.json({ error: 'Invalid review request' }, 400);
+    }
+
+    const docId = await store.resolveDocId(parsedReq.data.docId);
+    const pendingEdits = await store.getPendingEdits(docId);
+    if (pendingEdits.length > 0) {
+      return c.json({ error: 'Resolve pending suggested edits first' }, 409);
+    }
+
+    try {
+      const context = await buildBoundedCellContext(store, docId, blockId);
+      const userMessage =
+        parsedReq.data.prompt?.trim() ||
+        `Run a falsification-first Adversarial Spec Review of Block [${blockId}] in its [N-1, N, N+1] context.`;
+      const existingChat = await store.getActiveChat(docId);
+      const priorMessages: ChatMessage[] =
+        existingChat && existingChat.blockId === blockId
+          ? existingChat.messages
+          : [];
+
+      const messagesForGenerator: ChatMessage[] = [
+        ...priorMessages,
+        { role: 'user', content: userMessage },
+      ];
+      const settings = await store.getSettings(getDefaultModelId());
+      const profile = await profileStore.loadProfile();
+
+      const assistantReply = await cellChatGenerator({
+        context,
+        messages: messagesForGenerator,
+        modelId: settings.modelId,
+        reasoningEffort: settings.reasoningEffort,
+        pedagogicalPrompt: ADVERSARIAL_REVIEW_INSTRUCTIONS,
+        ...(hasLearnerProfileContent(profile)
+          ? { learnerProfile: profile }
+          : {}),
+      });
+
+      const activeChat = await store.appendChatMessage(
+        docId,
+        blockId,
+        settings.modelId,
+        userMessage,
+        assistantReply
+      );
+
+      return c.json({ activeChat });
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to run cell adversarial review';
+      const status = message.includes('not found') ? 404 : 500;
+      return c.json({ error: message }, status);
+    }
   });
 
   app.post('/api/blocks/:id/integrate', async (c) => {
