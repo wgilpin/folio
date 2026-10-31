@@ -148,10 +148,10 @@ describe('Epic 01 — Production SPA Server, Raw Markdown Endpoint, OrbStack Con
       'utf8'
     );
     expect(compose).toContain('container_name: folio');
-    expect(compose).toContain('4321:4321');
+    expect(compose).toContain('127.0.0.1:4321:4321');
     expect(compose).toContain('web-routing');
     expect(compose).toContain('external: true');
-    expect(compose).toContain('FOLIO_WORKSPACE=/data/workspace');
+    expect(compose).toContain('FOLIO_WORKSPACE=/root/.folio');
     expect(compose).toContain('TELEOSIS_API_KEY');
 
     const caddyfile = await fs.readFile(
@@ -159,6 +159,7 @@ describe('Epic 01 — Production SPA Server, Raw Markdown Endpoint, OrbStack Con
       'utf8'
     );
     expect(caddyfile).toContain('(protected)');
+    expect(caddyfile).toContain('request_header -Remote-User');
     expect(caddyfile).toContain('not header Authorization "Bearer {$TELEOSIS_API_KEY}"');
     expect(caddyfile).toContain('forward_auth @browser tinyauth:3000');
     expect(caddyfile).toContain('uri /api/auth/caddy');

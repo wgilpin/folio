@@ -12,12 +12,11 @@ describe('BYOM Settings & Workspace Switcher API (Epic 01)', () => {
 
   beforeEach(async () => {
     workspaceA = await fs.mkdtemp(path.join(os.tmpdir(), 'folio-ws-a-'));
-    workspaceB = await fs.mkdtemp(path.join(os.tmpdir(), 'folio-ws-b-'));
+    workspaceB = path.join(workspaceA, 'subworkspace-b');
   });
 
   afterEach(async () => {
     await fs.rm(workspaceA, { recursive: true, force: true });
-    await fs.rm(workspaceB, { recursive: true, force: true });
   });
 
   it('PUT /api/settings persists modelId, reasoningEffort, and pedagogical profile in .folio/notebook.json and forwards them to seed, chat, integrate, and branch generators', async () => {

@@ -16,7 +16,7 @@ describe('Epic 01 — Central Learner Ability Record, Cell Done Persistence & LL
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'folio-ability-done-'));
     workspaceDirA = path.join(tmpDir, 'workspace-a');
-    workspaceDirB = path.join(tmpDir, 'workspace-b');
+    workspaceDirB = path.join(workspaceDirA, 'workspace-b');
     profilePath = path.join(tmpDir, 'profile.json');
     await fs.mkdir(workspaceDirA, { recursive: true });
     await fs.mkdir(workspaceDirB, { recursive: true });

@@ -13,14 +13,13 @@ describe('Learner Profile & Prerequisite Seeding API (Phase 05 Epic 01)', () => 
 
   beforeEach(async () => {
     tempDirA = await fs.mkdtemp(path.join(os.tmpdir(), 'folio-prof-ws-a-'));
-    tempDirB = await fs.mkdtemp(path.join(os.tmpdir(), 'folio-prof-ws-b-'));
+    tempDirB = path.join(tempDirA, 'workspace-b');
     profileDir = await fs.mkdtemp(path.join(os.tmpdir(), 'folio-prof-global-'));
     profilePath = path.join(profileDir, 'profile.json');
   });
 
   afterEach(async () => {
     await fs.rm(tempDirA, { recursive: true, force: true });
-    await fs.rm(tempDirB, { recursive: true, force: true });
     await fs.rm(profileDir, { recursive: true, force: true });
   });
 

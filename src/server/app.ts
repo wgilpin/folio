@@ -134,14 +134,23 @@ import * as path from 'node:path';
 
 export function createApp(options: CreateAppOptions): Hono {
   const app = new Hono();
-  let store = new WorkspaceStore(options.workspaceDir);
+  const workspaceRootDir = path.resolve(options.workspaceDir);
+  const isWithinWorkspaceRoot = (candidateDir: string): boolean => {
+    const resolved = path.resolve(workspaceRootDir, candidateDir);
+    return (
+      resolved === workspaceRootDir ||
+      resolved.startsWith(workspaceRootDir + path.sep)
+    );
+  };
+
+  let store = new WorkspaceStore(workspaceRootDir);
   const resolvedProfilePath =
     options.profilePath ??
     (process.env.VITEST
-      ? path.join(options.workspaceDir, '.folio', 'profile.json')
+      ? path.join(workspaceRootDir, '.folio', 'profile.json')
       : undefined);
   const profileStore = new LearnerProfileStore(resolvedProfilePath);
-  const knownWorkspaces = new Set<string>([options.workspaceDir]);
+  const knownWorkspaces = new Set<string>([workspaceRootDir]);
   let workspaceInitialized = false;
   const seedGenerator = options.seedGenerator ?? defaultSeedGenerator;
   const cellChatGenerator =
@@ -166,12 +175,20 @@ export function createApp(options: CreateAppOptions): Hono {
     const profile = await profileStore.loadProfile();
     if (profile.workspaces) {
       for (const ws of profile.workspaces) {
-        knownWorkspaces.add(ws);
+        if (isWithinWorkspaceRoot(ws)) {
+          knownWorkspaces.add(path.resolve(workspaceRootDir, ws));
+        }
       }
     }
-    if (profile.workspaceDir && profile.workspaceDir !== store.workspaceDir) {
-      store = new WorkspaceStore(profile.workspaceDir);
-      knownWorkspaces.add(profile.workspaceDir);
+    if (profile.workspaceDir && isWithinWorkspaceRoot(profile.workspaceDir)) {
+      const resolvedProfileWs = path.resolve(
+        workspaceRootDir,
+        profile.workspaceDir
+      );
+      if (resolvedProfileWs !== store.workspaceDir) {
+        store = new WorkspaceStore(resolvedProfileWs);
+        knownWorkspaces.add(resolvedProfileWs);
+      }
     }
   };
 
@@ -192,11 +209,14 @@ export function createApp(options: CreateAppOptions): Hono {
       return next();
     }
     const authHeader = c.req.header('Authorization');
+    if (authHeader !== undefined) {
+      if (authHeader === `Bearer ${effectiveApiKey}`) {
+        return next();
+      }
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
     const remoteUser = c.req.header('Remote-User');
-    if (
-      authHeader === `Bearer ${effectiveApiKey}` ||
-      Boolean(remoteUser?.trim())
-    ) {
+    if (Boolean(remoteUser?.trim())) {
       return next();
     }
     return c.json({ error: 'Unauthorized' }, 401);
@@ -523,7 +543,19 @@ export function createApp(options: CreateAppOptions): Hono {
       return c.json({ error: 'Workspace directory is required' }, 400);
     }
 
-    const targetDir = parsedReq.data.workspaceDir;
+    if (!isWithinWorkspaceRoot(parsedReq.data.workspaceDir)) {
+      return c.json(
+        {
+          error: `Workspace directory must be within ${workspaceRootDir}`,
+        },
+        400
+      );
+    }
+
+    const targetDir = path.resolve(
+      workspaceRootDir,
+      parsedReq.data.workspaceDir
+    );
     await fs.mkdir(targetDir, { recursive: true });
     store = new WorkspaceStore(targetDir);
     knownWorkspaces.add(targetDir);
@@ -533,7 +565,9 @@ export function createApp(options: CreateAppOptions): Hono {
     );
     if (profile.workspaces) {
       for (const ws of profile.workspaces) {
-        knownWorkspaces.add(ws);
+        if (isWithinWorkspaceRoot(ws)) {
+          knownWorkspaces.add(path.resolve(workspaceRootDir, ws));
+        }
       }
     }
 

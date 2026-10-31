@@ -279,5 +279,62 @@ describe('Document API routes', () => {
     );
     expect(topicMd).not.toContain('<!-- folio:block id="blk_02" -->');
   });
+
+  it('POST /api/workspaces/switch allows subdirectories within workspace root and rejects paths outside it', async () => {
+    const app = createApp({
+      workspaceDir: tempDir,
+      modelId: 'anthropic:claude-opus-4-6',
+    });
+
+    const subWorkspace = path.join(tempDir, 'physics');
+    const okRes = await app.request('/api/workspaces/switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspaceDir: subWorkspace }),
+    });
+    expect(okRes.status).toBe(200);
+    const okBody = await okRes.json();
+    expect(okBody.workspaceDir).toBe(path.resolve(subWorkspace));
+
+    const outsideDir = path.resolve(tempDir, '..', 'escaped-folio-workspace');
+    const badRes = await app.request('/api/workspaces/switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspaceDir: outsideDir }),
+    });
+    expect(badRes.status).toBe(400);
+    const badBody = await badRes.json();
+    expect(badBody.error).toContain('Workspace directory must be within');
+  });
+
+  it('rejects spoofed Remote-User when an invalid Authorization Bearer header is provided', async () => {
+    const app = createApp({
+      workspaceDir: tempDir,
+      apiKey: 'secret-test-key',
+      modelId: 'anthropic:claude-opus-4-6',
+    });
+
+    const spoofedRes = await app.request('/api/doc', {
+      headers: {
+        Authorization: 'Bearer invalid-key',
+        'Remote-User': 'will',
+      },
+    });
+    expect(spoofedRes.status).toBe(401);
+
+    const validBearerRes = await app.request('/api/doc', {
+      headers: {
+        Authorization: 'Bearer secret-test-key',
+      },
+    });
+    expect(validBearerRes.status).toBe(200);
+
+    const validRemoteUserRes = await app.request('/api/doc', {
+      headers: {
+        'Remote-User': 'will',
+      },
+    });
+    expect(validRemoteUserRes.status).toBe(200);
+  });
 });
 

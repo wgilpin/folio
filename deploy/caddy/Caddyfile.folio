@@ -1,11 +1,16 @@
 # Reusable SSO + Bearer API-key bypass snippet for /Users/will/projects/caddy/Caddyfile
 (protected) {
-	@browser {
-		not header Authorization "Bearer {$TELEOSIS_API_KEY}"
-	}
-	forward_auth @browser tinyauth:3000 {
-		uri /api/auth/caddy
-		copy_headers Remote-User Remote-Email Remote-Name
+	route {
+		request_header -Remote-User
+		request_header -Remote-Email
+		request_header -Remote-Name
+		@browser {
+			not header Authorization "Bearer {$TELEOSIS_API_KEY}"
+		}
+		forward_auth @browser tinyauth:3000 {
+			uri /api/auth/caddy
+			copy_headers Remote-User Remote-Email Remote-Name
+		}
 	}
 }
 
