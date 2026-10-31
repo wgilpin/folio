@@ -8,11 +8,13 @@ export interface InlineChatDrawerProps {
   isSending?: boolean;
   isIntegrating?: boolean;
   isBranching?: boolean;
+  isReviewing?: boolean;
   error?: string | null;
   onSendMessage: (message: string) => Promise<void> | void;
   onIntegrate?: () => Promise<void> | void;
   onBranch?: () => Promise<void> | void;
   onDiscard: () => Promise<void> | void;
+  onRunAdversarialReview?: () => Promise<void> | void;
 }
 
 export function InlineChatDrawer({
@@ -21,11 +23,13 @@ export function InlineChatDrawer({
   isSending = false,
   isIntegrating = false,
   isBranching = false,
+  isReviewing = false,
   error = null,
   onSendMessage,
   onIntegrate,
   onBranch,
   onDiscard,
+  onRunAdversarialReview,
 }: InlineChatDrawerProps): React.ReactElement {
   const [input, setInput] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -34,7 +38,7 @@ export function InlineChatDrawer({
     inputRef.current?.focus();
   }, []);
 
-  const busy = isSending || isIntegrating || isBranching;
+  const busy = isSending || isIntegrating || isBranching || isReviewing;
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -78,9 +82,32 @@ export function InlineChatDrawer({
         }}
       >
         <span>Ephemeral Cell Chat · {blockId}</span>
-        <span style={{ color: '#65635E', fontWeight: 400 }}>
-          Context: ToC + [N-1, N, N+1]
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            type="button"
+            aria-label={`Run Adversarial Review on ${blockId}`}
+            data-testid={`inline-drawer-adversarial-review-btn-${blockId}`}
+            disabled={busy}
+            onClick={() => void onRunAdversarialReview?.()}
+            style={{
+              fontFamily: "'Inter', system-ui, sans-serif",
+              fontSize: '11px',
+              fontWeight: 500,
+              padding: '3px 8px',
+              borderRadius: '6px',
+              border: '1px solid #F59E0B',
+              backgroundColor: '#FEF3C7',
+              color: '#B45309',
+              cursor: busy ? 'not-allowed' : 'pointer',
+              opacity: busy ? 0.5 : 1,
+            }}
+          >
+            {isReviewing ? 'Auditing...' : 'Adversarial Review'}
+          </button>
+          <span style={{ color: '#65635E', fontWeight: 400 }}>
+            Context: ToC + [N-1, N, N+1]
+          </span>
+        </div>
       </div>
 
       {messages.length > 0 && (

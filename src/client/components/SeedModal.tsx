@@ -605,6 +605,9 @@ export function SeedModal({
             <option value="rigorous-derivation">
               Rigorous & Formal (Deep structural analysis & formal derivations)
             </option>
+            <option value="adversarial-review">
+              Adversarial Spec Review (Falsification-first technical audit)
+            </option>
             <option value="custom">Custom Prompt</option>
           </select>
 

@@ -38,3 +38,51 @@ When viewing any notebook in the workbench, the user can click **Adversarial Rev
 ## Notes
 
 - Preserve all existing `aria-label`s and `data-testid`s in `App.tsx`, `DocumentChatDrawer.tsx`, `ConceptBlockCard.tsx`, `InlineChatDrawer.tsx`, `SeedModal.tsx`, and `SidebarTree.tsx` so existing UI tests continue to pass without modification.
+
+## Build note — 2026-10-31
+
+### Tasks done
+- Added `adversarial-review` option (*Adversarial Spec Review*) to the Pedagogical Style / Pedagogical Profile dropdowns in `src/client/components/SeedModal.tsx` (`#seed-pedagogical-profile`) and `src/client/components/SidebarTree.tsx` (`#sidebar-pedagogical-profile`), persisting via `PUT /api/settings`.
+- Added document-level one-click **Adversarial Review** buttons in the notebook header in `src/client/App.tsx` (`data-testid="doc-adversarial-review-btn"`) and inside `src/client/components/DocumentChatDrawer.tsx` (`data-testid="drawer-doc-adversarial-review-btn"`), wiring `handleRunDocAdversarialReview` to `POST /api/doc/review` and opening `DocumentChatDrawer` with the returned thread ready for follow-up chat, **Integrate**, **Branch Doc**, or **Discard**.
+- Added cell-level one-click **Adversarial Review** buttons in `src/client/components/ConceptBlockCard.tsx` (`data-testid="cell-adversarial-review-btn-<blockId>"`, wrapped in an inline-flex `<span>` to preserve the direct-child icon button structure expected by existing workbench action-bar tests) and inside `src/client/components/InlineChatDrawer.tsx` (`data-testid="inline-drawer-adversarial-review-btn-<blockId>"`), wiring `handleRunCellAdversarialReview` to `POST /api/blocks/:id/review`.
+- Enforced the diff gate (`pendingEdits.length > 0`) on both document-level and cell-level **Adversarial Review** buttons.
+
+### Tests added
+- `src/client/__tests__/AdversarialReview.test.tsx`:
+  - `triggers document-level Adversarial Review via POST /api/doc/review, opens DocumentChatDrawer with severity-ranked findings, and supports Integrate` (AC-1, AC-3)
+  - `triggers cell-level Adversarial Review via POST /api/blocks/:id/review and renders findings in InlineChatDrawer` (AC-2, AC-3)
+  - `selects Adversarial Spec Review (adversarial-review) in SeedModal and SidebarTree pedagogical profile dropdowns and persists via PUT /api/settings` (AC-4)
+
+### Suite result
+- `npm test`: 30 test files passed, 96 tests passed.
+
+### Deviations from plan
+- Wrapped the cell-level `Adversarial Review` button in `ConceptBlockCard.tsx` inside `<span style={{ display: 'inline-flex' }}>` (matching the existing `Done` button pattern) so `Workbench.test.tsx`'s `:scope > button, :scope > div > button` selector for icon buttons remains unaffected.
+
+---
+
+## Review — 2026-10-31
+
+**Verdict:** pass
+
+### Acceptance criteria
+
+| AC | Met | Proved by |
+|---|---|---|
+| AC-1 | yes | `src/client/__tests__/AdversarialReview.test.tsx` — `triggers document-level Adversarial Review via POST /api/doc/review, opens DocumentChatDrawer with severity-ranked findings, and supports Integrate` |
+| AC-2 | yes | `src/client/__tests__/AdversarialReview.test.tsx` — `triggers cell-level Adversarial Review via POST /api/blocks/:id/review and renders findings in InlineChatDrawer` |
+| AC-3 | yes | `src/client/__tests__/AdversarialReview.test.tsx` — `triggers document-level Adversarial Review via POST /api/doc/review, opens DocumentChatDrawer with severity-ranked findings, and supports Integrate` & `triggers cell-level Adversarial Review via POST /api/blocks/:id/review and renders findings in InlineChatDrawer` |
+| AC-4 | yes | `src/client/__tests__/AdversarialReview.test.tsx` — `selects Adversarial Spec Review (adversarial-review) in SeedModal and SidebarTree pedagogical profile dropdowns and persists via PUT /api/settings` |
+
+### Drift
+
+None
+
+### Findings
+
+None
+
+### Follow-ups
+
+None
+
