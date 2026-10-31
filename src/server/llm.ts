@@ -72,6 +72,7 @@ export type DocumentChatGenerator = (input: {
   reasoningEffort?: ReasoningEffort;
   pedagogicalPrompt?: string;
   learnerProfile?: LearnerProfile;
+  source?: SeedSourceInput;
 }) => Promise<string>;
 
 export type DocumentIntegrateGenerator = (input: {
@@ -187,6 +188,29 @@ export const KATEX_MATH_FORMATTING_RULES = [
   '  - Always ensure LaTeX braces and syntax are complete and valid.',
 ].join('\n');
 
+export const ADVERSARIAL_REVIEW_INSTRUCTIONS = [
+  'Pedagogical Profile (Adversarial Spec Review — Falsification-First Technical Audit):',
+  'Execute a rigorous 6-step falsification-first technical audit:',
+  '1. **Adopt a Falsification Mindset**: Assume the document or specification contains fatal back-of-the-envelope errors, hidden bottlenecks, or abstraction leaks until proven otherwise. Explicitly discard conversational "yes-and" self-conditioning—even if you helped generate the draft.',
+  '2. **Audit Cross-Layer Boundaries**: Map the abstraction layers (e.g. ML model/algorithm, software runtime, hardware architecture, physical layout, operational environment). At every boundary, verify topology/connectivity, data types/bit-widths/precision, and drift/noise degradation.',
+  '3. **Re-Derive All Numbers from First Principles**: Never trust stated figures. Independently re-compute:',
+  '   - **Capacity and Footprint** (memory, storage, area, state scaling)',
+  '   - **Throughput and Latency** (bandwidth walls, serialization bottlenecks, critical path timing)',
+  '   - **Power and Resource Budgets** (energy per op, static/passive dissipation, DAC/ADC/I/O overhead)',
+  '4. **Trace Second-Order Consequences of Fixes**: Whenever the spec proposes a workaround or optimization, trace what new bottleneck, state overhead, or bandwidth wall that fix introduces and check for internal inconsistencies across sections.',
+  '5. **Expose Unstated Dependencies and Closure Gaps**: Identify missing upstream infrastructure, unmodeled calibration/control loops, and gaps between the headline claim and the work actually performed.',
+  '6. **Format the Critique by Severity**: Organize your audit findings under these exact severity headings:',
+  '   - **Serious / Fatal Gaps**',
+  '   - **Moderate Gaps**',
+  '   - **Small Number / Arithmetic Errors**',
+  '   - **Result and Open Risks**',
+  '',
+  'Audit Gotchas to Avoid:',
+  '- **Self-Conditioning in Long Threads**: Do not defer to prior turns or polite framing; evaluate claims cold.',
+  '- **Fixing Without Pricing the Fix**: Every proposed mitigation must be priced in bandwidth, latency, area, power, or complexity.',
+  '- **Missing the Passive Elements**: Account for interconnects, muxes, drivers, conversion stages, and idle/static overhead—not just active compute cores.',
+].join('\n');
+
 export const PEDAGOGICAL_PROFILES: Record<
   PedagogicalProfileId,
   { id: PedagogicalProfileId; label: string; instructions: string }
@@ -202,6 +226,11 @@ export const PEDAGOGICAL_PROFILES: Record<
     label: 'Rigorous & Formal',
     instructions:
       'Pedagogical Profile (Rigorous & Formal): Emphasize step-by-step analytical precision, explicit assumptions, mechanisms, and boundary conditions. For mathematical or quantitative topics, provide step-by-step derivations; for qualitative, humanities, or social-science topics, provide rigorous conceptual, historical, or structural analysis without inventing artificial mathematical notation.',
+  },
+  'adversarial-review': {
+    id: 'adversarial-review',
+    label: 'Adversarial Spec Review',
+    instructions: ADVERSARIAL_REVIEW_INSTRUCTIONS,
   },
   custom: {
     id: 'custom',
@@ -529,21 +558,67 @@ export const defaultDocumentChatGenerator: DocumentChatGenerator = async ({
   reasoningEffort = 'high',
   pedagogicalPrompt,
   learnerProfile,
+  source,
 }): Promise<string> => {
   const model = resolveLanguageModel(modelId);
   const resolvedPedagogy = pedagogicalPrompt ?? resolvePedagogicalPrompt();
+  const isPdfSource =
+    source?.encoding === 'base64' && source?.mediaType === 'application/pdf';
+  const decodedSourceText =
+    source && !isPdfSource
+      ? source.encoding === 'base64'
+        ? Buffer.from(source.content, 'base64').toString('utf-8')
+        : source.content
+      : null;
+
+  const systemPrompt = [
+    'You are an expert tutor answering holistic questions about a structured notebook document.',
+    'Explain concepts clearly, synthesize across blocks when relevant, ground explanations in intuition and concrete examples, and stay aligned with the notebook content.',
+    resolvedPedagogy,
+    formatLearnerProfilePrompt(learnerProfile),
+    KATEX_MATH_FORMATTING_RULES,
+    `Reasoning Effort: ${reasoningEffort}`,
+    '',
+    formatDocumentContextPrompt(context),
+    ...(source && decodedSourceText
+      ? [
+          '',
+          `Raw Source Attachment (${source.filename}, ${source.mediaType}):\n\n${decodedSourceText}`,
+        ]
+      : []),
+  ].join('\n');
+
+  if (source && isPdfSource) {
+    const formattedMessages = messages.map((m, idx) => {
+      if (idx === messages.length - 1 && m.role === 'user') {
+        return {
+          role: 'user' as const,
+          content: [
+            { type: 'text' as const, text: m.content },
+            {
+              type: 'file' as const,
+              data: Buffer.from(source.content, 'base64'),
+              mediaType: 'application/pdf' as const,
+            },
+          ],
+        };
+      }
+      return {
+        role: m.role,
+        content: m.content,
+      };
+    });
+    const { text } = await generateText({
+      model,
+      system: systemPrompt,
+      messages: formattedMessages,
+    });
+    return text;
+  }
+
   const { text } = await generateText({
     model,
-    system: [
-      'You are an expert tutor answering holistic questions about a structured notebook document.',
-      'Explain concepts clearly, synthesize across blocks when relevant, ground explanations in intuition and concrete examples, and stay aligned with the notebook content.',
-      resolvedPedagogy,
-      formatLearnerProfilePrompt(learnerProfile),
-      KATEX_MATH_FORMATTING_RULES,
-      `Reasoning Effort: ${reasoningEffort}`,
-      '',
-      formatDocumentContextPrompt(context),
-    ].join('\n'),
+    system: systemPrompt,
     messages: messages.map((m) => ({
       role: m.role,
       content: m.content,

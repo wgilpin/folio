@@ -1,7 +1,7 @@
 # SDLC state
 
 Project: folio
-Updated: 2026-10-28
+Updated: 2026-10-31
 
 ## Stack
 
@@ -18,7 +18,7 @@ Updated: 2026-10-28
 - explore: skipped
 - architecture: approved 2026-10-18
 - design: approved 2026-10-18
-- phases: approved 2026-10-28
+- phases: approved 2026-10-31
 
 ## Phases
 
@@ -52,6 +52,9 @@ Updated: 2026-10-28
 - [x] 09-seed-from-source-and-attachment — done
   - [x] epic-01-source-seed-and-attachment-api — merged 2026-10-28
   - [x] epic-02-unified-seed-ui-and-sidebar-cleanup — merged 2026-10-28
+- [ ] 10-adversarial-review — in progress
+  - [x] epic-01-adversarial-review-api — reviewed 2026-10-31
+  - [ ] epic-02-adversarial-review-ui — pending
 
 ## Notes for a fresh session
 
@@ -61,3 +64,4 @@ Updated: 2026-10-28
 - Phase 07 covers the unified central Learner Ability Record (combining self-supplied background, standing learning instructions, and engaged sources/topics) and a non-hiding **Done** check-off status on Concept Blocks.
 - Phase 08 covers deploying Folio as an always-on OrbStack container (`folio.teleosis.ai` on `web-routing`) behind central Caddy `forward_auth` (`tinyauth` browser SSO + `Authorization: Bearer $TELEOSIS_API_KEY` programmatic bypass in `/Users/will/projects/caddy`) and shipping a cross-Mac Folio Skill for external LLM chat sessions.
 - Phase 09 covers unified seeding from an uploaded file (`.pdf` or `.md`) or pasted text/AI chat transcript (with or without a steering prompt), raw source attachment persistence under `.folio/attachments/<docId>/<filename>` and `GET /api/doc/:id/source`, and removing the vestigial Root Folder switcher (`ISS-6`).
+- Phase 10 covers falsification-first Adversarial Review: an `adversarial-review` pedagogical/synthesis profile plus one-click **Adversarial Review** triggers on full notebooks (Concept Blocks + `sourceAttachment` when present) and individual cells (`[N-1, N, N+1]`) that open an ephemeral chat thread with severity-ranked findings (*Serious / Fatal Gaps*, *Moderate Gaps*, *Small Number / Arithmetic Errors*, and *Result & Open Risks*) ready to debate, **Integrate**, **Branch Doc**, or **Discard**.

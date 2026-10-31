@@ -96,3 +96,13 @@ Issue ISS-6: Remove or hide vestigial `Root Folder` (`/data/workspace`) switcher
 **Not in this phase:** Faithful verbatim document chunking/import without LLM synthesis (deferred to a later phase for `.pdf` and `.md` uploads), automatic cleanup of the saved raw text attachment, whole-textbook multi-document splitting, or re-injecting the raw attachment into subsequent `Ask Cell` / `Integrate` contexts.
 
 **Depends on:** Phase 01, Phase 02, Phase 03, Phase 04, Phase 05, Phase 06, Phase 07, Phase 08
+
+## Phase 10 — Falsification-First Adversarial Review (Seed Profile, Cell & Document Audit)
+
+**Goal:** Add a falsification-first **Adversarial Review** capability across Folio: (1) an `adversarial-review` pedagogical/synthesis profile for seeding specs, architectures, or papers directly as red-team audits, and (2) one-click **Adversarial Review** triggers on both the full notebook (inspecting all Concept Blocks plus `sourceAttachment` when present) and individual Concept Blocks (`[N-1, N, N+1]`), opening an ephemeral chat thread with severity-ranked findings (*Serious / Fatal Gaps*, *Moderate Gaps*, *Small Number / Arithmetic Errors*, and *Result & Open Risks*) ready to debate, **Integrate**, **Branch Doc**, or **Discard**.
+
+**Works after this phase:** You can seed a document directly in **Adversarial Spec Review** mode or click **Adversarial Review** on any existing notebook or cell to run a 6-step falsification-first audit (exposing broken arithmetic, cross-layer boundary violations, second-order fix bottlenecks, and unstated dependencies), discuss the critique in the drawer, and resolve it via **Integrate** (staging fixes/blocks), **Branch Doc**, or **Discard**.
+
+**Not in this phase:** Automated background re-auditing on every keystroke, external code execution/simulation kernels to verify equations, or multi-document repository-wide audits.
+
+**Depends on:** Phase 01, Phase 02, Phase 03, Phase 04, Phase 09
