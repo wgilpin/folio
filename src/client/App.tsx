@@ -941,6 +941,30 @@ export function App(): React.ReactElement {
     }
   };
 
+  const handleDownloadMarkdown = () => {
+    if (!document || blocks.length === 0) {
+      return;
+    }
+    const cleanMarkdown =
+      blocks
+        .map((b) =>
+          b.markdown.replace(/<!--\s*folio:block\b[^>]*-->\r?\n?/g, '').trim()
+        )
+        .filter((text) => text.length > 0)
+        .join('\n\n') + '\n';
+    const blob = new Blob([cleanMarkdown], {
+      type: 'text/markdown;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = globalThis.document.createElement('a');
+    link.href = url;
+    link.download = document.filename || `${document.id}.md`;
+    globalThis.document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const ancestorChain: DocumentNode[] = [];
   if (document) {
     let currParentId = document.parentId;
@@ -1124,6 +1148,24 @@ export function App(): React.ReactElement {
                     >
                       {blocks.filter((b) => b.done).length}/{blocks.length} blocks done
                     </span>
+                    <button
+                      type="button"
+                      aria-label="Download notebook as Markdown"
+                      data-testid="doc-download-md-btn"
+                      onClick={handleDownloadMarkdown}
+                      style={{
+                        backgroundColor: '#FFFFFF',
+                        color: '#18181B',
+                        border: '1px solid #E4DFD7',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Download MD
+                    </button>
                     <button
                       type="button"
                       aria-label="Run Adversarial Review on notebook"

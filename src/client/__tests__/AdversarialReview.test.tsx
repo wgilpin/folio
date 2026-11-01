@@ -357,4 +357,90 @@ describe('Adversarial Review UI (Document, Cell & Seed/Sidebar Profile)', () => 
       activeProfileId: 'adversarial-review',
     });
   });
+
+  it('downloads clean Markdown without block comments when Download MD is clicked in the notebook header', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/api/doc') && (!init?.method || init.method === 'GET')) {
+        return new Response(
+          JSON.stringify({
+            document: {
+              id: 'estimator-convergence',
+              title: 'Estimator Convergence Spec',
+              filename: 'estimator-convergence.md',
+              parentId: null,
+              parentBlockId: null,
+              childDocIds: [],
+            },
+            blocks: [
+              {
+                id: 'blk_00',
+                markdown:
+                  '<!-- folio:block id="blk_00" done="true" -->\n## Prerequisites & Foundations\n\nLinear algebra and probability basics.',
+                done: true,
+              },
+              {
+                id: 'blk_01',
+                markdown:
+                  '## 1. Estimator Convergence\n\nThe estimator converges at rate O(1/n) under finite variance.',
+              },
+            ],
+            toc: [
+              { level: 2, text: 'Prerequisites & Foundations', blockId: 'blk_00' },
+              { level: 2, text: '1. Estimator Convergence', blockId: 'blk_01' },
+            ],
+            activeChat: null,
+            pendingEdits: [],
+            modelId: 'anthropic:claude-opus-4-6',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+
+    globalThis.fetch = fetchMock;
+
+    let capturedBlob: Blob | null = null;
+    const createObjectURLSpy = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockImplementation((obj: Blob | MediaSource) => {
+        capturedBlob = obj as Blob;
+        return 'blob:folio-test-download';
+      });
+    const revokeObjectURLSpy = vi
+      .spyOn(URL, 'revokeObjectURL')
+      .mockImplementation(() => {});
+
+    let capturedDownloadAttr = '';
+    let capturedHrefAttr = '';
+    const anchorClickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        capturedDownloadAttr = this.download;
+        capturedHrefAttr = this.getAttribute('href') ?? '';
+      });
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    const downloadBtn = await screen.findByTestId('doc-download-md-btn');
+    expect(downloadBtn).toBeInTheDocument();
+    expect(downloadBtn).toHaveTextContent('Download MD');
+
+    await user.click(downloadBtn);
+
+    expect(createObjectURLSpy).toHaveBeenCalledTimes(1);
+    expect(anchorClickSpy).toHaveBeenCalledTimes(1);
+    expect(capturedDownloadAttr).toBe('estimator-convergence.md');
+    expect(capturedHrefAttr).toBe('blob:folio-test-download');
+    expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:folio-test-download');
+
+    expect(capturedBlob).not.toBeNull();
+    const downloadedText = await capturedBlob!.text();
+    expect(downloadedText).not.toContain('<!-- folio:block');
+    expect(downloadedText).toBe(
+      '## Prerequisites & Foundations\n\nLinear algebra and probability basics.\n\n## 1. Estimator Convergence\n\nThe estimator converges at rate O(1/n) under finite variance.\n'
+    );
+  });
 });

@@ -50,3 +50,12 @@ Serve the compiled Vite SPA and `/api/*` from Hono in an always-on OrbStack cont
 **Lands in:** phase 09 (fixed on main)
 
 `SidebarTree.tsx` renders a `ROOT FOLDER` (`/data/workspace`) text input and `Switch Workspace` button at the top of the sidebar, which is vestigial now that all notebooks live in a single unified library inside the OrbStack container.
+
+## ISS-7 — Add a Download MD button in the notebook header to download the active notebook as clean Markdown without block comments
+
+**Raised:** 2026-11-01
+**Status:** fixed 2026-11-01
+**Lands in:** fixed on main
+
+Added a **Download MD** (`doc-download-md-btn`) button in the notebook header of `src/client/App.tsx` that downloads the active notebook as `<document.filename>` with `<!-- folio:block ... -->` comments stripped out. Proved by `src/client/__tests__/AdversarialReview.test.tsx` (`downloads clean Markdown without block comments when Download MD is clicked in the notebook header`).
+
