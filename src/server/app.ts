@@ -46,6 +46,7 @@ export interface CreateAppOptions {
   profilePath?: string;
   clientDistDir?: string;
   apiKey?: string;
+  proxySecret?: string;
   seedGenerator?: SeedGenerator;
   cellChatGenerator?: CellChatGenerator;
   integrateGenerator?: IntegrateGenerator;
@@ -203,6 +204,10 @@ export function createApp(options: CreateAppOptions): Hono {
     options.apiKey ??
     (process.env.VITEST ? undefined : process.env.FOLIO_API_KEY)
   )?.trim();
+  const effectiveProxySecret = (
+    options.proxySecret ??
+    (process.env.VITEST ? undefined : process.env.CADDY_PROXY_SECRET)
+  )?.trim();
 
   app.get('/api/health', (c) => {
     return c.json({ status: 'ok' });
@@ -224,7 +229,9 @@ export function createApp(options: CreateAppOptions): Hono {
     }
     const remoteUser = c.req.header('Remote-User');
     if (Boolean(remoteUser?.trim())) {
-      return next();
+      if (!effectiveProxySecret || c.req.header('X-Proxy-Secret') === effectiveProxySecret) {
+        return next();
+      }
     }
     return c.json({ error: 'Unauthorized' }, 401);
   });

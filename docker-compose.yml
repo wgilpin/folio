@@ -3,6 +3,10 @@ services:
     build: .
     container_name: folio
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "127.0.0.1:4321:4321"
     env_file:
@@ -11,7 +15,8 @@ services:
       - HOST=0.0.0.0
       - PORT=4321
       - FOLIO_WORKSPACE=/root/.folio
-      - FOLIO_API_KEY=${TELEOSIS_API_KEY:-}
+      - FOLIO_API_KEY=${FOLIO_API_KEY:-${TELEOSIS_API_KEY:-}}
+      - CADDY_PROXY_SECRET=${CADDY_PROXY_SECRET:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
