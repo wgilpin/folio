@@ -185,11 +185,12 @@ describe('Adversarial Review UI (Document, Cell & Seed/Sidebar Profile)', () => 
     // After integration produces pendingEdits, diff gate locks both doc-level and cell-level Adversarial Review buttons (AC-3)
     await waitFor(() => {
       expect(screen.getByTestId('doc-adversarial-review-btn')).toBeDisabled();
-      expect(screen.getByTestId('cell-adversarial-review-btn-blk_01')).toBeDisabled();
     });
+    await user.click(screen.getByRole('button', { name: 'More actions for blk_01' }));
+    expect(screen.getByTestId('cell-adversarial-review-btn-blk_01')).toBeDisabled();
   });
 
-  it('triggers cell-level Adversarial Review via POST /api/blocks/:id/review and renders findings in InlineChatDrawer', async () => {
+  it('triggers cell-level Adversarial Review from inside the block overflow menu via POST /api/blocks/:id/review and renders findings in InlineChatDrawer', async () => {
     const blocks = [
       {
         id: 'blk_00',
@@ -265,7 +266,21 @@ describe('Adversarial Review UI (Document, Cell & Seed/Sidebar Profile)', () => 
     const user = userEvent.setup();
     render(<App />);
 
-    const cellReviewBtn = await screen.findByTestId('cell-adversarial-review-btn-blk_01');
+    expect(
+      await screen.findByRole('heading', { name: '1. Carnot Efficiency' })
+    ).toBeInTheDocument();
+
+    // Cell Adversarial Review button is hidden until the overflow menu (...) is opened
+    expect(
+      screen.queryByTestId('cell-adversarial-review-btn-blk_01')
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'More actions for blk_01' }));
+
+    const overflowMenu = screen.getByTestId('overflow-menu-blk_01');
+    const cellReviewBtn = within(overflowMenu).getByTestId(
+      'cell-adversarial-review-btn-blk_01'
+    );
     expect(cellReviewBtn).toBeInTheDocument();
     expect(cellReviewBtn).toBeEnabled();
 

@@ -926,36 +926,6 @@ export function ConceptBlockCard({
           </svg>
         </button>
 
-        <span style={{ display: 'inline-flex' }}>
-          <button
-            type="button"
-            aria-label={`Adversarial review cell ${block.id}`}
-            data-testid={`cell-adversarial-review-btn-${block.id}`}
-            disabled={Boolean(askCellDisabled || isChatLocked || isReviewingChat)}
-            title={
-              isLocked
-                ? 'Resolve pending suggested edits first'
-                : 'Run falsification-first Adversarial Review on this cell'
-            }
-            onClick={() => void onRunAdversarialReview?.(block.id)}
-            style={{
-              ...actionBtnStyle,
-              backgroundColor: '#FEF3C7',
-              color: '#B45309',
-              borderColor: '#F59E0B',
-              fontWeight: 500,
-              opacity: Boolean(askCellDisabled || isChatLocked || isReviewingChat)
-                ? 0.5
-                : 1,
-              cursor: Boolean(askCellDisabled || isChatLocked || isReviewingChat)
-                ? 'not-allowed'
-                : 'pointer',
-            }}
-          >
-            {isReviewingChat ? 'Reviewing...' : 'Adversarial Review'}
-          </button>
-        </span>
-
         <button
           type="button"
           aria-label={`Ask cell ${block.id}`}
@@ -1031,7 +1001,7 @@ export function ConceptBlockCard({
                 right: 0,
                 top: 'calc(100% + 4px)',
                 zIndex: 20,
-                minWidth: '120px',
+                minWidth: '150px',
                 backgroundColor: '#FFFFFF',
                 border: '1px solid #E4DFD7',
                 borderRadius: '6px',
@@ -1042,6 +1012,34 @@ export function ConceptBlockCard({
                 gap: '2px',
               }}
             >
+              <button
+                type="button"
+                aria-label={`Adversarial review cell ${block.id}`}
+                data-testid={`cell-adversarial-review-btn-${block.id}`}
+                disabled={Boolean(askCellDisabled || isChatLocked || isReviewingChat)}
+                title={
+                  isLocked
+                    ? 'Resolve pending suggested edits first'
+                    : 'Run falsification-first Adversarial Review on this cell'
+                }
+                onClick={() => {
+                  setIsOverflowOpen(false);
+                  void onRunAdversarialReview?.(block.id);
+                }}
+                style={{
+                  ...overflowMenuItemStyle,
+                  color: '#B45309',
+                  fontWeight: 500,
+                  opacity: Boolean(askCellDisabled || isChatLocked || isReviewingChat)
+                    ? 0.5
+                    : 1,
+                  cursor: Boolean(askCellDisabled || isChatLocked || isReviewingChat)
+                    ? 'not-allowed'
+                    : 'pointer',
+                }}
+              >
+                {isReviewingChat ? 'Reviewing...' : 'Adversarial Review'}
+              </button>
               <button
                 type="button"
                 aria-label={`Split ${block.id}`}

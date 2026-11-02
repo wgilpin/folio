@@ -471,4 +471,117 @@ describe('Sub-Document Branching, SubDocLinkCard, SidebarTree & Breadcrumb Navig
       within(breadcrumbs).getByText('Spacetime Geometry and Four-Vectors')
     ).toBeInTheDocument();
   });
+
+  it('collapses all expanded document branches in SidebarTree when Collapse all is clicked', async () => {
+    const user = userEvent.setup();
+
+    const documentsState: Record<string, DocumentNode> = {
+      'general-relativity': {
+        id: 'general-relativity',
+        title: 'General Relativity',
+        filename: 'general-relativity.md',
+        parentId: null,
+        parentBlockId: null,
+        childDocIds: ['four-vectors'],
+      },
+      'four-vectors': {
+        id: 'four-vectors',
+        title: 'Four-Vectors',
+        filename: 'four-vectors.md',
+        parentId: 'general-relativity',
+        parentBlockId: 'blk_00',
+        childDocIds: ['minkowski-metric'],
+      },
+      'minkowski-metric': {
+        id: 'minkowski-metric',
+        title: 'Minkowski Metric',
+        filename: 'minkowski-metric.md',
+        parentId: 'four-vectors',
+        parentBlockId: 'blk_00',
+        childDocIds: [],
+      },
+      'quantum-mechanics': {
+        id: 'quantum-mechanics',
+        title: 'Quantum Mechanics',
+        filename: 'quantum-mechanics.md',
+        parentId: null,
+        parentBlockId: null,
+        childDocIds: ['hilbert-spaces'],
+      },
+      'hilbert-spaces': {
+        id: 'hilbert-spaces',
+        title: 'Hilbert Spaces',
+        filename: 'hilbert-spaces.md',
+        parentId: 'quantum-mechanics',
+        parentBlockId: 'blk_00',
+        childDocIds: [],
+      },
+    };
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.startsWith('/api/doc') && (!init?.method || init.method === 'GET')) {
+        return new Response(
+          JSON.stringify({
+            document: documentsState['general-relativity'],
+            documents: documentsState,
+            blocks: [
+              {
+                id: 'blk_00',
+                markdown: '## 0. Prerequisites & Notation\n\nPrereqs.',
+              },
+            ],
+            toc: [{ level: 2, text: '0. Prerequisites & Notation', blockId: 'blk_00' }],
+            modelId: 'anthropic:claude-opus-4-6',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 404 });
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole('heading', { name: 'General Relativity' })
+    ).toBeInTheDocument();
+
+    const sidebar = screen.getByRole('navigation', { name: 'Notebook Sidebar' });
+
+    // Initially, child and grandchild documents across both root branches are visible
+    expect(
+      within(sidebar).getByRole('button', { name: 'Open document Four-Vectors' })
+    ).toBeInTheDocument();
+    expect(
+      within(sidebar).getByRole('button', { name: 'Open document Minkowski Metric' })
+    ).toBeInTheDocument();
+    expect(
+      within(sidebar).getByRole('button', { name: 'Open document Hilbert Spaces' })
+    ).toBeInTheDocument();
+
+    // Click Collapse all in the Document Tree header
+    const collapseAllBtn = within(sidebar).getByRole('button', {
+      name: /collapse all/i,
+    });
+    await user.click(collapseAllBtn);
+
+    // All child and grandchild document nodes are now hidden, while root documents remain visible
+    expect(
+      within(sidebar).getByRole('button', { name: 'Open document General Relativity' })
+    ).toBeInTheDocument();
+    expect(
+      within(sidebar).getByRole('button', { name: 'Open document Quantum Mechanics' })
+    ).toBeInTheDocument();
+    expect(
+      within(sidebar).queryByRole('button', { name: 'Open document Four-Vectors' })
+    ).not.toBeInTheDocument();
+    expect(
+      within(sidebar).queryByRole('button', { name: 'Open document Minkowski Metric' })
+    ).not.toBeInTheDocument();
+    expect(
+      within(sidebar).queryByRole('button', { name: 'Open document Hilbert Spaces' })
+    ).not.toBeInTheDocument();
+  });
 });

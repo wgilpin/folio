@@ -147,6 +147,19 @@ export function SidebarTree({
     }));
   };
 
+  const collapseAllDocs = () => {
+    const next: Record<string, boolean> = {};
+    for (const docNode of allDocs) {
+      if (docNode.childDocIds.length > 0) {
+        next[docNode.id] = true;
+      }
+    }
+    if (document && document.childDocIds.length > 0) {
+      next[document.id] = true;
+    }
+    setCollapsedDocIds(next);
+  };
+
   const renderDocTree = (docNode: DocumentNode, depth: number): React.ReactElement => {
     const isActive = document?.id === docNode.id;
     const navTitle = getConciseTitle(docNode.title, docNode.shortTitle);
@@ -448,15 +461,43 @@ export function SidebarTree({
         <section style={{ marginBottom: '24px' }}>
           <div
             style={{
-              fontSize: '12px',
-              fontWeight: 600,
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em',
-              color: '#65635E',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
               marginBottom: '8px',
             }}
           >
-            Document Tree
+            <span
+              style={{
+                fontSize: '12px',
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+                color: '#65635E',
+              }}
+            >
+              Document Tree
+            </span>
+            {rootDocs.length > 0 && (
+              <button
+                type="button"
+                aria-label="Collapse all documents"
+                onClick={collapseAllDocs}
+                style={{
+                  backgroundColor: 'transparent',
+                  border: '1px solid #E4DFD7',
+                  borderRadius: '4px',
+                  padding: '2px 6px',
+                  fontSize: '11px',
+                  fontFamily: "'Inter', system-ui, sans-serif",
+                  color: '#65635E',
+                  cursor: 'pointer',
+                  lineHeight: 1.2,
+                }}
+              >
+                Collapse all
+              </button>
+            )}
           </div>
           {rootDocs.length > 0 ? (
             <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>

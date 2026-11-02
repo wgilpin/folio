@@ -67,4 +67,20 @@ Added a **Download MD** (`doc-download-md-btn`) button in the notebook header of
 
 Normalized unquoted Mermaid `subgraph` headers and node labels containing parentheses, colons, or special characters via `sanitizeMermaidCode` in `src/client/components/MermaidDiagram.tsx`, added unique per-render diagram IDs and SVG `getBBox` fallback support, and added Mermaid syntax formatting rules in `src/server/llm.ts`. Proved by `src/client/__tests__/Workbench.test.tsx` (`renders Mermaid flowchart with unquoted subgraph titles containing parentheses and colons as an SVG diagram instead of raw pre text`).
 
+## ISS-9 — Add a Collapse all button on the Document Tree list in the sidebar
+
+**Raised:** 2026-11-02
+**Status:** fixed 2026-11-02
+**Lands in:** fixed on main
+
+Added a **Collapse all** (`aria-label="Collapse all documents"`) button in the Document Tree header of `src/client/components/SidebarTree.tsx` that collapses all parent document nodes with children in `collapsedDocIds`. Proved by `src/client/__tests__/BranchTree.test.tsx` (`collapses all expanded document branches in SidebarTree when Collapse all is clicked`).
+
+## ISS-10 — Move the per-block Adversarial Review button into the block overflow menu (`...`)
+
+**Raised:** 2026-11-02
+**Status:** fixed 2026-11-02
+**Lands in:** fixed on main
+
+Moved `cell-adversarial-review-btn-<blockId>` in `src/client/components/ConceptBlockCard.tsx` from the top-level block footer action bar into `overflow-menu-<blockId>` (`More actions for <blockId>`). Proved by `src/client/__tests__/AdversarialReview.test.tsx` (`triggers cell-level Adversarial Review from inside the block overflow menu via POST /api/blocks/:id/review and renders findings in InlineChatDrawer`).
+
 
