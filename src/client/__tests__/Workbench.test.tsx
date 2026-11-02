@@ -455,5 +455,74 @@ describe('Workbench UI', () => {
     const sidebar = screen.getByRole('navigation', { name: /notebook sidebar/i });
     expect(sidebar).not.toHaveTextContent('2. Canonical Equations');
   });
+
+  it('renders Mermaid flowchart with unquoted subgraph titles containing parentheses and colons as an SVG diagram instead of raw pre text', async () => {
+    const mermaidBlock = [
+      '## 1. Recurrent vs Transformer Path',
+      '',
+      '```mermaid',
+      'flowchart LR',
+      '    subgraph Recurrent Processing: O(N) Sequential Steps',
+      '        x1[x1] --> h1[h1]',
+      '        h1 --> h2[h2]',
+      '        x2[x2] --> h2',
+      '        h2 --> h3[h3]',
+      '        x3[x3] --> h3',
+      '    end',
+      '    subgraph Transformer Attention: O(1) Sequential Path',
+      '        tx1[x1] --- A[All-to-All Self-Attention Matrix]',
+      '        tx2[x2] --- A',
+      '        tx3[x3] --- A',
+      '        A --> out1[y1]',
+      '        A --> out2[y2]',
+      '        A --> out3[y3]',
+      '    end',
+      '```',
+    ].join('\n');
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/api/doc') && (!init?.method || init.method === 'GET')) {
+        return new Response(
+          JSON.stringify({
+            document: {
+              id: 'index',
+              title: 'Attention Mechanisms',
+              filename: 'index.md',
+              parentId: null,
+              parentBlockId: null,
+              childDocIds: [],
+            },
+            blocks: [
+              {
+                id: 'blk_01',
+                markdown: mermaidBlock,
+              },
+            ],
+            toc: [
+              { level: 2, text: '1. Recurrent vs Transformer Path', blockId: 'blk_01' },
+            ],
+            modelId: 'anthropic:claude-opus-4-6',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response('Not Found', { status: 404 });
+    });
+
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole('heading', { name: '1. Recurrent vs Transformer Path' })
+    ).toBeInTheDocument();
+
+    const mermaidContainer = screen.getByTestId('mermaid-diagram');
+    await waitFor(() => {
+      expect(mermaidContainer.querySelector('svg')).not.toBeNull();
+    });
+    expect(mermaidContainer.querySelector('pre')).toBeNull();
+  });
 });
 

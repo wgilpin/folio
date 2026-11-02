@@ -186,6 +186,10 @@ export const KATEX_MATH_FORMATTING_RULES = [
   '  - Never use unsupported LaTeX commands such as \\multicolumn or \\cline in matrices or tables.',
   '  - For multi-term equations or multi-step derivations, split them across multiple lines (e.g. using \\begin{aligned} ... \\end{aligned} with \\\\ breaks) so formulas fit neatly on cards without requiring horizontal scrolling or overflow.',
   '  - Always ensure LaTeX braces and syntax are complete and valid.',
+  '- Mermaid Diagram Formatting Rules (when including a ```mermaid block):',
+  '  - Always use a ```mermaid fenced code block.',
+  '  - In flowcharts/graphs, ALWAYS give every `subgraph` a simple alphanumeric ID and wrap its title in double quotes inside brackets, e.g. `subgraph sg1["Recurrent Processing: O(N) Sequential Steps"]` (never write unquoted subgraph titles with spaces, colons, or parentheses).',
+  '  - Always wrap node labels containing spaces, parentheses, colons, or mathematical notation in double quotes, e.g. `A["All-to-All Self-Attention Matrix"]` or `L["Lagrangian L(q, qdot)"]`.',
 ].join('\n');
 
 export const ADVERSARIAL_REVIEW_INSTRUCTIONS = [

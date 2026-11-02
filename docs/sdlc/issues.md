@@ -59,3 +59,12 @@ Serve the compiled Vite SPA and `/api/*` from Hono in an always-on OrbStack cont
 
 Added a **Download MD** (`doc-download-md-btn`) button in the notebook header of `src/client/App.tsx` that downloads the active notebook as `<document.filename>` with `<!-- folio:block ... -->` comments stripped out. Proved by `src/client/__tests__/AdversarialReview.test.tsx` (`downloads clean Markdown without block comments when Download MD is clicked in the notebook header`).
 
+## ISS-8 — Render Mermaid charts as SVG diagrams instead of falling back to raw text
+
+**Raised:** 2026-11-02
+**Status:** fixed 2026-11-02
+**Lands in:** fixed on main
+
+Normalized unquoted Mermaid `subgraph` headers and node labels containing parentheses, colons, or special characters via `sanitizeMermaidCode` in `src/client/components/MermaidDiagram.tsx`, added unique per-render diagram IDs and SVG `getBBox` fallback support, and added Mermaid syntax formatting rules in `src/server/llm.ts`. Proved by `src/client/__tests__/Workbench.test.tsx` (`renders Mermaid flowchart with unquoted subgraph titles containing parentheses and colons as an SVG diagram instead of raw pre text`).
+
+
