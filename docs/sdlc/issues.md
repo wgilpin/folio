@@ -83,4 +83,22 @@ Added a **Collapse all** (`aria-label="Collapse all documents"`) button in the D
 
 Moved `cell-adversarial-review-btn-<blockId>` in `src/client/components/ConceptBlockCard.tsx` from the top-level block footer action bar into `overflow-menu-<blockId>` (`More actions for <blockId>`). Proved by `src/client/__tests__/AdversarialReview.test.tsx` (`triggers cell-level Adversarial Review from inside the block overflow menu via POST /api/blocks/:id/review and renders findings in InlineChatDrawer`).
 
+## ISS-11 — Pressing Shift-Enter in the Topic Prompt box starts generation instead of inserting a new line
+
+**Raised:** 2026-11-04
+**Status:** fixed 2026-11-04
+**Lands in:** fixed on main
+
+Changed `#seed-topic-input` in `src/client/components/SeedModal.tsx` from `<input type="text">` to a `<textarea>` with `handleTopicKeyDown` so Shift-Enter inserts a newline without starting generation and plain Enter submits. Proved by `src/client/__tests__/SeedFromSource.test.tsx` (`inserts a newline without starting generation when Shift-Enter is pressed in the Topic Prompt box, and submits on Enter`).
+
+## ISS-12 — The Cancel button during block generation should interrupt generation
+
+**Raised:** 2026-11-04
+**Status:** fixed 2026-11-04
+**Lands in:** fixed on main
+
+Wired an `AbortController` in `handleSeed` / `handleCancelSeed` in `src/client/App.tsx` and enabled the Cancel button during generation (`isSubmitting: true`) in `src/client/components/SeedModal.tsx` so clicking Cancel aborts the in-flight `POST /api/doc/seed` request and resets `isSeeding`. Proved by `src/client/__tests__/SeedFromSource.test.tsx` (`interrupts in-flight block generation when Cancel is clicked`).
+
+
+
 

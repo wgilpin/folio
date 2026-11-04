@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App.js';
 
@@ -272,5 +273,134 @@ describe('SeedFromSource (Phase 09 Epic 02 — Unified Seed from Source UI & Vie
         },
       });
     });
+  });
+
+  it('inserts a newline without starting generation when Shift-Enter is pressed in the Topic Prompt box, and submits on Enter', async () => {
+    const emptyPayload = {
+      document: null,
+      documents: {},
+      blocks: [],
+      toc: [],
+      activeChat: null,
+      pendingEdits: [],
+      modelId: 'anthropic:claude-opus-4-6',
+    };
+
+    const seededDocPayload = {
+      document: {
+        id: 'hamiltonian-mechanics',
+        title: 'Hamiltonian Mechanics',
+        shortTitle: 'Hamiltonian Mechanics',
+        filename: 'hamiltonian-mechanics.md',
+        parentId: null,
+        parentBlockId: null,
+        childDocIds: [],
+      },
+      documents: {},
+      blocks: [{ id: 'blk_00', markdown: '## 0. Prerequisites & Foundations' }],
+      toc: [],
+      activeChat: null,
+      pendingEdits: [],
+      modelId: 'anthropic:claude-opus-4-6',
+    };
+
+    let seedRequestCount = 0;
+    let seedRequestBody: Record<string, unknown> | null = null;
+
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/doc' && (!init?.method || init.method === 'GET')) {
+        return new Response(JSON.stringify(emptyPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url === '/api/doc/seed' && init?.method === 'POST') {
+        seedRequestCount += 1;
+        seedRequestBody = JSON.parse(String(init.body));
+        return new Response(JSON.stringify(seededDocPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
+    });
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Topic Prompt/i)).toBeTruthy();
+    });
+
+    const topicInput = screen.getByLabelText(/Topic Prompt/i) as HTMLTextAreaElement;
+
+    await user.click(topicInput);
+    await user.keyboard('Hamiltonian Mechanics{Shift>}{Enter}{/Shift}Focus on action-angle variables');
+
+    expect(seedRequestCount).toBe(0);
+    expect(topicInput.value).toBe('Hamiltonian Mechanics\nFocus on action-angle variables');
+
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => {
+      expect(seedRequestCount).toBe(1);
+      expect(seedRequestBody).toEqual({
+        prompt: 'Hamiltonian Mechanics\nFocus on action-angle variables',
+      });
+    });
+  });
+
+  it('interrupts in-flight block generation when Cancel is clicked', async () => {
+    let seedSignal: AbortSignal | undefined;
+
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/doc' && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              document: null,
+              documents: {},
+              blocks: [],
+              toc: [],
+              activeChat: null,
+              pendingEdits: [],
+              modelId: 'anthropic:claude-opus-4-6',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        );
+      }
+      if (url === '/api/doc/seed' && init?.method === 'POST') {
+        seedSignal = init.signal ?? undefined;
+        return new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        });
+      }
+      return Promise.resolve(new Response(JSON.stringify({ error: 'Not found' }), { status: 404 }));
+    });
+
+    render(<App />);
+
+    const topicInput = await screen.findByLabelText(/Topic Prompt/i);
+    fireEvent.change(topicInput, { target: { value: 'Quantum Decoherence' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Seed Topic' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Generating blocks...' })).toBeTruthy();
+    });
+
+    const cancelBtn = screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement;
+    expect(cancelBtn.disabled).toBe(false);
+    fireEvent.click(cancelBtn);
+
+    await waitFor(() => {
+      expect(seedSignal?.aborted).toBe(true);
+      expect(screen.getByRole('button', { name: 'Seed Topic' })).toBeTruthy();
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });

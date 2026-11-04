@@ -76,6 +76,7 @@ export function App(): React.ReactElement {
 
   const scrollPositionsRef = useRef<Record<string, number>>({});
   const documentRef = useRef<DocumentNode | null>(null);
+  const seedAbortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     documentRef.current = document;
@@ -427,7 +428,18 @@ export function App(): React.ReactElement {
     }
   };
 
+  const handleCancelSeed = () => {
+    if (seedAbortControllerRef.current) {
+      seedAbortControllerRef.current.abort();
+      seedAbortControllerRef.current = null;
+    }
+    setIsSeeding(false);
+  };
+
   const handleSeed = async (prompt: string, source?: SeedSourceInput) => {
+    seedAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    seedAbortControllerRef.current = controller;
     setIsSeeding(true);
     setSeedError(null);
 
@@ -439,9 +451,13 @@ export function App(): React.ReactElement {
           prompt,
           ...(source ? { source } : {}),
         }),
+        signal: controller.signal,
       });
 
       const data = await res.json();
+      if (controller.signal.aborted) {
+        return;
+      }
       if (!res.ok) {
         throw new Error(data.error ?? `Failed to seed topic (${res.status})`);
       }
@@ -456,11 +472,20 @@ export function App(): React.ReactElement {
         restoreScroll(0);
       }
     } catch (err) {
+      if (
+        controller.signal.aborted ||
+        (err instanceof Error && err.name === 'AbortError')
+      ) {
+        return;
+      }
       setSeedError(
         err instanceof Error ? err.message : 'Failed to seed topic'
       );
     } finally {
-      setIsSeeding(false);
+      if (seedAbortControllerRef.current === controller) {
+        seedAbortControllerRef.current = null;
+        setIsSeeding(false);
+      }
     }
   };
 
@@ -1039,6 +1064,7 @@ export function App(): React.ReactElement {
               isSubmitting={isSeeding}
               error={seedError}
               onSeed={handleSeed}
+              onCancel={handleCancelSeed}
               documents={documents}
               onSelectDocument={(docId) => void handleSelectDocument(docId)}
               onDeleteDocument={handleDeleteDocument}
@@ -1328,6 +1354,7 @@ export function App(): React.ReactElement {
           isSubmitting={isSeeding}
           error={seedError}
           onSeed={handleSeed}
+          onCancel={handleCancelSeed}
           documents={documents}
           onSelectDocument={(docId) => {
             void handleSelectDocument(docId);

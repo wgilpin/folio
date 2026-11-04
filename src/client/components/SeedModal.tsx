@@ -152,6 +152,7 @@ export interface SeedModalProps {
   onDeleteDocument?: (docId: string) => Promise<void> | void;
   settings?: NotebookSettings;
   onUpdateSettings?: (patch: Partial<NotebookSettings>) => Promise<void> | void;
+  onCancel?: () => void;
   onClose?: () => void;
   mode?: 'inline' | 'modal';
 }
@@ -165,6 +166,7 @@ export function SeedModal({
   onDeleteDocument,
   settings,
   onUpdateSettings,
+  onCancel,
   onClose,
   mode = 'inline',
 }: SeedModalProps): React.ReactElement {
@@ -197,7 +199,7 @@ export function SeedModal({
     });
   };
 
-  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const pastedText =
       e.clipboardData?.getData('text/plain') ||
       e.clipboardData?.getData('text') ||
@@ -231,8 +233,8 @@ export function SeedModal({
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     const trimmed = prompt.trim();
     if ((!trimmed && !source) || isSubmitting) {
       return;
@@ -248,6 +250,13 @@ export function SeedModal({
       });
     }
     await onSeed(trimmed, source ?? undefined);
+  };
+
+  const handleTopicKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      void handleSubmit(e);
+    }
   };
 
   const card = (
@@ -402,11 +411,12 @@ export function SeedModal({
           </div>
         )}
 
-        <input
+        <textarea
           id="seed-topic-input"
-          type="text"
+          rows={2}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={handleTopicKeyDown}
           onPaste={handlePaste}
           placeholder={
             source
@@ -425,6 +435,7 @@ export function SeedModal({
             border: '1px solid #E4DFD7',
             borderRadius: '6px',
             marginBottom: '16px',
+            resize: 'vertical',
           }}
         />
 
@@ -636,11 +647,11 @@ export function SeedModal({
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-          {mode === 'modal' && onClose && (
+          {((mode === 'modal' && onClose) || (isSubmitting && onCancel)) && (
             <button
               type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
+              onClick={isSubmitting && onCancel ? onCancel : onClose}
+              disabled={isSubmitting && !onCancel}
               style={{
                 backgroundColor: '#FAF8F5',
                 color: '#18181B',
