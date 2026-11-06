@@ -524,5 +524,100 @@ describe('Workbench UI', () => {
     });
     expect(mermaidContainer.querySelector('pre')).toBeNull();
   });
+
+  it('downloads a single Concept Block cell as clean Markdown (.md) from the block overflow menu', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/api/doc') && (!init?.method || init.method === 'GET')) {
+        return new Response(
+          JSON.stringify({
+            document: {
+              id: 'hamiltonian-mechanics',
+              title: 'Hamiltonian Mechanics',
+              filename: 'hamiltonian-mechanics.md',
+              parentId: null,
+              parentBlockId: null,
+              childDocIds: [],
+            },
+            blocks: [
+              {
+                id: 'blk_01',
+                markdown:
+                  '<!-- folio:block id="blk_01" -->\n## 1. Phase Space Coordinates\n\nGeneralized coordinates and conjugate momenta.',
+              },
+              {
+                id: 'blk_02',
+                markdown:
+                  '## 2. Canonical Equations\n\nEquations of motion in phase space.',
+              },
+            ],
+            toc: [
+              { level: 2, text: '1. Phase Space Coordinates', blockId: 'blk_01' },
+              { level: 2, text: '2. Canonical Equations', blockId: 'blk_02' },
+            ],
+            modelId: 'anthropic:claude-opus-4-6',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response('Not Found', { status: 404 });
+    });
+
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    let capturedBlob: Blob | null = null;
+    const createObjectURLSpy = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockImplementation((obj: Blob | MediaSource) => {
+        capturedBlob = obj as Blob;
+        return 'blob:folio-cell-download';
+      });
+    const revokeObjectURLSpy = vi
+      .spyOn(URL, 'revokeObjectURL')
+      .mockImplementation(() => {});
+
+    let capturedDownloadAttr = '';
+    let capturedHrefAttr = '';
+    const anchorClickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        capturedDownloadAttr = this.download;
+        capturedHrefAttr = this.getAttribute('href') ?? '';
+      });
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(
+      await screen.findByRole('heading', { name: '1. Phase Space Coordinates' })
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', { name: 'More actions for blk_01' })
+    );
+
+    const downloadCellBtn = screen.getByTestId('cell-download-md-btn-blk_01');
+    expect(downloadCellBtn).toBeInTheDocument();
+    expect(downloadCellBtn).toHaveTextContent('Download MD');
+
+    await user.click(downloadCellBtn);
+
+    expect(
+      screen.queryByTestId('overflow-menu-blk_01')
+    ).not.toBeInTheDocument();
+    expect(createObjectURLSpy).toHaveBeenCalledTimes(1);
+    expect(anchorClickSpy).toHaveBeenCalledTimes(1);
+    expect(capturedDownloadAttr).toBe('blk_01.md');
+    expect(capturedHrefAttr).toBe('blob:folio-cell-download');
+    expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:folio-cell-download');
+
+    expect(capturedBlob).not.toBeNull();
+    const downloadedText = await capturedBlob!.text();
+    expect(downloadedText).not.toContain('<!-- folio:block');
+    expect(downloadedText).toBe(
+      '## 1. Phase Space Coordinates\n\nGeneralized coordinates and conjugate momenta.\n'
+    );
+  });
 });
+
 

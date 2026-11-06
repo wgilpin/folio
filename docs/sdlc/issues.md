@@ -99,6 +99,13 @@ Changed `#seed-topic-input` in `src/client/components/SeedModal.tsx` from `<inpu
 
 Wired an `AbortController` in `handleSeed` / `handleCancelSeed` in `src/client/App.tsx` and enabled the Cancel button during generation (`isSubmitting: true`) in `src/client/components/SeedModal.tsx` so clicking Cancel aborts the in-flight `POST /api/doc/seed` request and resets `isSeeding`. Proved by `src/client/__tests__/SeedFromSource.test.tsx` (`interrupts in-flight block generation when Cancel is clicked`).
 
+## ISS-13 — Each Concept Block cell should have a Download MD action that downloads that cell's Markdown as a `.md` file
+
+**Raised:** 2026-11-06
+**Status:** fixed 2026-11-06
+**Lands in:** fixed on main
+
+Added `handleDownloadCellMarkdown` and a **Download MD** (`cell-download-md-btn-<blockId>`) action in `overflow-menu-<blockId>` in `src/client/components/ConceptBlockCard.tsx` that strips `<!-- folio:block ... -->` comments and downloads `<blockId>.md`. Proved by `src/client/__tests__/Workbench.test.tsx` (`downloads a single Concept Block cell as clean Markdown (.md) from the block overflow menu`).
 
 
 

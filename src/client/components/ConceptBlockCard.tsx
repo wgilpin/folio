@@ -461,6 +461,24 @@ export function ConceptBlockCard({
     }
   };
 
+  const handleDownloadCellMarkdown = () => {
+    const cleanMarkdown =
+      block.markdown
+        .replace(/<!--\s*folio:block\b[^>]*-->\r?\n?/g, '')
+        .trim() + '\n';
+    const blob = new Blob([cleanMarkdown], {
+      type: 'text/markdown;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = globalThis.document.createElement('a');
+    link.href = url;
+    link.download = `${block.id}.md`;
+    globalThis.document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const isLocked = isChatLocked || askCellDisabled;
   const isDiffPending = Boolean(pendingEdit);
   const isHighlighted = isEditingRaw || isChatOpen;
@@ -1039,6 +1057,18 @@ export function ConceptBlockCard({
                 }}
               >
                 {isReviewingChat ? 'Reviewing...' : 'Adversarial Review'}
+              </button>
+              <button
+                type="button"
+                aria-label={`Download ${block.id} as Markdown`}
+                data-testid={`cell-download-md-btn-${block.id}`}
+                onClick={() => {
+                  setIsOverflowOpen(false);
+                  handleDownloadCellMarkdown();
+                }}
+                style={overflowMenuItemStyle}
+              >
+                Download MD
               </button>
               <button
                 type="button"
